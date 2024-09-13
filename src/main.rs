@@ -25,5 +25,12 @@ fn main() {
 
     cpu.run();
 
-    println!("A: {}", cpu.registers.a);
+    println!("=============================================");
+    println!("A: 0x{:X}", cpu.registers.a);
+    println!("X: 0x{:X}", cpu.registers.x);
+    println!("Y: 0x{:X}", cpu.registers.y);
+
+    println!("PC: 0x{:X}", cpu.registers.pc);
+    println!("SP: {:?}", cpu.registers.stkp);
+    println!("Status: {:?}", cpu.registers.status);
 }

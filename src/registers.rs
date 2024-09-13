@@ -26,6 +26,7 @@ impl StatusArgs {
     }
 }
 
+#[derive(Debug)]
 pub struct StackPointer(pub u8);
 
 pub struct Registers {
@@ -38,7 +39,7 @@ pub struct Registers {
 }
 
 bitflags! {
-    #[derive(Copy, Clone)]
+    #[derive(Copy, Clone, Debug)]
     pub struct Status: u8 {
         const PS_NEGATIVE = 0b1000_0000;
         const PS_OVERFLOW = 0b0100_0000;

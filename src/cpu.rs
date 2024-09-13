@@ -115,7 +115,7 @@ impl<M: Bus, V: Variant> CPU<M, V> {
                 self.load_a(val);
             },
             (_, _) => {
-                println!("attempting to execute {:?}", decoded_instr)
+                println!("can't execute {:?}", decoded_instr)
             }
         }
     }
