@@ -16,6 +16,12 @@ impl Default for Memory {
 pub trait Bus {
     fn get_byte(&mut self, address: u16) -> u8;
     fn set_byte(&mut self, address: u16, value: u8);
+
+    fn set_bytes(&mut self, start: u16, values: &[u8]) {
+        for i in 0..values.len() as u16 {
+            self.set_byte(start + i, values[i as usize]);
+        }
+    }
 }
 
 impl Memory {

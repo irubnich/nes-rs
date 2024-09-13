@@ -11,6 +11,21 @@ pub struct StatusArgs {
     pub C: bool,
 }
 
+impl StatusArgs {
+    pub const fn none() -> StatusArgs {
+        StatusArgs {
+            N: false,
+            V: false,
+            U: false,
+            B: false,
+            D: false,
+            I: false,
+            Z: false,
+            C: false,
+        }
+    }
+}
+
 pub struct StackPointer(pub u8);
 
 pub struct Registers {
@@ -23,6 +38,7 @@ pub struct Registers {
 }
 
 bitflags! {
+    #[derive(Copy, Clone)]
     pub struct Status: u8 {
         const PS_NEGATIVE = 0b1000_0000;
         const PS_OVERFLOW = 0b0100_0000;
@@ -76,6 +92,10 @@ impl Status {
         }
 
         out
+    }
+
+    pub fn set_with_mask(&mut self, mask: Status, rhs: Status) {
+        *self = (*self & !mask) | rhs;
     }
 }
 

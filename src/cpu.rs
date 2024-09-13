@@ -1,6 +1,6 @@
 use rs6502::Variant;
 use rs6502::memory::Bus;
-use rs6502::registers::Registers;
+use rs6502::registers::{Registers, Status, StatusArgs};
 use rs6502::instruction::{AddressingMode, DecodedInstr, Instruction, OpInput};
 
 fn address_from_bytes(lo: u8, hi: u8) -> u16 {
@@ -39,6 +39,8 @@ impl<M: Bus, V: Variant> CPU<M, V> {
         
         let x: u8 = self.memory.get_byte(self.registers.pc);
 
+        println!("at PC: {:X}", self.registers.pc);
+        println!("decoding opcode {:X}", x);
         match V::decode(x) {
             Some((instr, am)) => {
                 let extra_bytes = am.extra_bytes();
@@ -95,7 +97,9 @@ impl<M: Bus, V: Variant> CPU<M, V> {
                     },
                 };
 
+                println!("old PC: {:X}", self.registers.pc);
                 self.registers.pc = self.registers.pc.wrapping_add(num_bytes);
+                println!("new PC: {:X}", self.registers.pc);
 
                 Some((instr, am_out))
             }
@@ -105,10 +109,58 @@ impl<M: Bus, V: Variant> CPU<M, V> {
 
     pub fn execute_instruction(&mut self, decoded_instr: DecodedInstr) {
         match decoded_instr {
-            (Instruction::BRK, OpInput::UseImmediate(val)) => {
-
+            (Instruction::LDA, OpInput::UseAddress(addr)) => {
+                let val = self.memory.get_byte(addr);
+                println!("LDA addr: {:?} value: {}", addr, val);
+                self.load_a(val);
             },
-            _ => panic!()
+            (_, _) => {
+                println!("attempting to execute {:?}", decoded_instr)
+            }
         }
+    }
+
+    pub fn single_step(&mut self) {
+        if let Some(decoded_instr) = self.fetch_next_and_decode() {
+            self.execute_instruction(decoded_instr);
+        }
+    }
+
+    pub fn run(&mut self) {
+        while let Some(decoded_instr) = self.fetch_next_and_decode() {
+            self.execute_instruction(decoded_instr);
+        }
+    }
+
+    const fn value_is_negative(value: u8) -> bool {
+        value > 127
+    }
+
+    fn set_flags_from_u8(status: &mut Status, value: u8) {
+        let is_zero = value == 0;
+        let is_negative = Self::value_is_negative(value);
+
+        status.set_with_mask(
+            Status::PS_ZERO | Status::PS_NEGATIVE,
+            Status::new(StatusArgs {
+                Z: is_zero,
+                N: is_negative,
+                ..StatusArgs::none()
+            }),
+        );
+    }
+
+    fn set_u8_with_flags(mem: &mut u8, status: &mut Status, value: u8) {
+        *mem = value;
+        CPU::<M, V>::set_flags_from_u8(status, value);
+    }
+
+    fn load_a(&mut self, value: u8) {
+        CPU::<M, V>::set_u8_with_flags(
+            &mut self.registers.a,
+            &mut self.registers.status,
+            value,
+        );
+        println!("LOAD A {}", value)
     }
 }

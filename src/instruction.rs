@@ -1,8 +1,11 @@
+#[derive(Debug)]
 pub enum Instruction {
     BRK,
     ORA,
+    LDA,
 }
 
+#[derive(Debug)]
 pub enum OpInput {
     UseImplied,
     UseImmediate(u8),
@@ -58,6 +61,7 @@ impl crate::Variant for Nmos6502 {
             0x03 => None,
             0x04 => None,
             0x05 => Some((Instruction::ORA, AddressingMode::ZP0)),
+            0xA5 => Some((Instruction::LDA, AddressingMode::ZP0)),
             0xFF => None,
             _ => None,
         }
