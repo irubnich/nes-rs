@@ -95,6 +95,14 @@ impl Status {
         out
     }
 
+    pub fn and(&mut self, rhs: Status) {
+        *self &= rhs;
+    }
+
+    pub fn or(&mut self, rhs: Status) {
+        *self |= rhs;
+    }
+
     pub fn set_with_mask(&mut self, mask: Status, rhs: Status) {
         *self = (*self & !mask) | rhs;
     }

@@ -114,9 +114,44 @@ impl<M: Bus, V: Variant> CPU<M, V> {
                 println!("LDA addr: {:?} value: {}", addr, val);
                 self.load_a(val);
             },
+            (Instruction::SEC, OpInput::UseImplied) => {
+                self.registers.status.or(Status::PS_CARRY);
+            },
+            (Instruction::SBC, OpInput::UseAddress(addr)) => {
+                let val = self.memory.get_byte(addr);
+                self.subtract_with_carry(val);
+            }
+            (Instruction::BEQ, OpInput::UseRelative(rel)) => {
+                let addr = self.registers.pc.wrapping_add(rel);
+                self.branch_if_equal(addr);
+            },
+            (Instruction::BMI, OpInput::UseRelative(rel)) => {
+                let addr = self.registers.pc.wrapping_add(rel);
+                self.branch_if_minus(addr)
+            },
+            (Instruction::STA, OpInput::UseAddress(addr)) => {
+                self.memory.set_byte(addr, self.registers.a);
+            },
+            (Instruction::JMP, OpInput::UseAddress(addr)) => {
+                self.jump(addr);
+            },
+            (Instruction::LDX, OpInput::UseAddress(addr)) => {
+                let val = self.memory.get_byte(addr);
+                self.load_x(val);
+            },
+            (Instruction::LDY, OpInput::UseAddress(addr)) => {
+                let val = self.memory.get_byte(addr);
+                self.load_y(val);
+            },
+            (Instruction::STX, OpInput::UseAddress(addr)) => {
+                self.memory.set_byte(addr, self.registers.x);
+            },
+            (Instruction::STY, OpInput::UseAddress(addr)) => {
+                self.memory.set_byte(addr, self.registers.y);
+            },
             (_, _) => {
                 println!("can't execute {:?}", decoded_instr)
-            }
+            },
         }
     }
 
@@ -162,5 +197,82 @@ impl<M: Bus, V: Variant> CPU<M, V> {
             value,
         );
         println!("LOAD A {}", value)
+    }
+
+    fn load_x(&mut self, value: u8) {
+        CPU::<M, V>::set_u8_with_flags(
+            &mut self.registers.x,
+            &mut self.registers.status,
+            value,
+        );
+        println!("LOAD A {}", value)
+    }
+
+    fn load_y(&mut self, value: u8) {
+        CPU::<M, V>::set_u8_with_flags(
+            &mut self.registers.y,
+            &mut self.registers.status,
+            value,
+        );
+        println!("LOAD A {}", value)
+    }
+
+    fn jump(&mut self, addr: u16) {
+        self.registers.pc = addr;
+    }
+
+    fn branch_if_equal(&mut self, addr: u16) {
+        if self.registers.status.contains(Status::PS_ZERO) {
+            self.registers.pc = addr;
+        }
+    }
+
+    fn branch_if_minus(&mut self, addr: u16) {
+        if self.registers.status.contains(Status::PS_NEGATIVE) {
+            self.registers.pc = addr;
+        }
+    }
+
+    fn subtract_with_carry(&mut self, value: u8) {
+        let nc: u8 = u8::from(!self.registers.status.contains(Status::PS_CARRY));
+
+        let a_before = self.registers.a;
+        let a_after = a_before.wrapping_sub(value).wrapping_sub(nc);
+        let over = (nc == 0 && value > 127) && a_before < 128 && a_after > 127;
+        let under = (a_before > 127) && (0u8.wrapping_sub(value).wrapping_sub(nc) > 127) && a_after < 128;
+        let did_overflow = over || under;
+
+        let mask = Status::PS_CARRY | Status::PS_OVERFLOW;
+
+        let bcd1: u8 = if (a_before & 0x0f).wrapping_sub(nc) < (value & 0x0f) {
+            0x06
+        } else {
+            0x00
+        };
+
+        let bcd2: u8 = if (a_after.wrapping_sub(bcd1) & 0xf0) > 0x90 {
+            0x60
+        } else {
+            0x00
+        };
+
+        let result: u8 = if self.registers.status.contains(Status::PS_DECIMAL_MODE) {
+            a_after.wrapping_sub(bcd1).wrapping_sub(bcd2)
+        } else {
+            a_after
+        };
+
+        let did_carry = result > a_before;
+
+        self.registers.status.set_with_mask(
+            mask,
+            Status::new(StatusArgs {
+                C: did_carry,
+                V: did_overflow,
+                ..StatusArgs::none()
+            }),
+        );
+
+        self.load_a(result);
     }
 }

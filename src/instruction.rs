@@ -1,8 +1,12 @@
 #[derive(Debug)]
 pub enum Instruction {
-    BRK,
-    ORA,
-    LDA,
+    BRK, STA, JMP,
+    ORA, LDX, LDY,
+    LDA, STX, STY,
+    SEC,
+    SBC,
+    BEQ,
+    BMI
 }
 
 #[derive(Debug)]
@@ -61,7 +65,17 @@ impl crate::Variant for Nmos6502 {
             0x03 => None,
             0x04 => None,
             0x05 => Some((Instruction::ORA, AddressingMode::ZP0)),
+            0x30 => Some((Instruction::BMI, AddressingMode::REL)),
+            0x38 => Some((Instruction::SEC, AddressingMode::IMP)),
+            0x4C => Some((Instruction::JMP, AddressingMode::ABS)),
+            0x84 => Some((Instruction::STY, AddressingMode::ZP0)),
+            0x85 => Some((Instruction::STA, AddressingMode::ZP0)),
+            0x86 => Some((Instruction::STX, AddressingMode::ZP0)),
+            0xA4 => Some((Instruction::LDY, AddressingMode::ZP0)),
             0xA5 => Some((Instruction::LDA, AddressingMode::ZP0)),
+            0xA6 => Some((Instruction::LDX, AddressingMode::ZP0)),
+            0xE5 => Some((Instruction::SBC, AddressingMode::ZP0)),
+            0xF0 => Some((Instruction::BEQ, AddressingMode::REL)),
             0xFF => None,
             _ => None,
         }
