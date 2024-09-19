@@ -26,8 +26,23 @@ impl StatusArgs {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct StackPointer(pub u8);
+
+impl StackPointer {
+    pub const fn to_u16(self) -> u16 {
+        let StackPointer(val) = self;
+        u16::from_le_bytes([val, 0x01])
+    }
+
+    pub fn decrement(&mut self) {
+        self.0 = self.0.wrapping_sub(1);
+    }
+
+    pub fn increment(&mut self) {
+        self.0 = self.0.wrapping_add(1);
+    }
+}
 
 pub struct Registers {
     pub a: u8,

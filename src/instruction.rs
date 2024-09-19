@@ -65,6 +65,7 @@ impl crate::Variant for Nmos6502 {
             0x03 => None,
             0x04 => None,
             0x05 => Some((Instruction::ORA, AddressingMode::ZP0)),
+            0x07 => None,
             0x30 => Some((Instruction::BMI, AddressingMode::REL)),
             0x38 => Some((Instruction::SEC, AddressingMode::IMP)),
             0x4C => Some((Instruction::JMP, AddressingMode::ABS)),

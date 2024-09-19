@@ -97,9 +97,7 @@ impl<M: Bus, V: Variant> CPU<M, V> {
                     },
                 };
 
-                println!("old PC: {:X}", self.registers.pc);
                 self.registers.pc = self.registers.pc.wrapping_add(num_bytes);
-                println!("new PC: {:X}", self.registers.pc);
 
                 Some((instr, am_out))
             }
@@ -149,8 +147,18 @@ impl<M: Bus, V: Variant> CPU<M, V> {
             (Instruction::STY, OpInput::UseAddress(addr)) => {
                 self.memory.set_byte(addr, self.registers.y);
             },
+            (Instruction::BRK, OpInput::UseImplied) => {
+                for b in self.registers.pc.wrapping_sub(1).to_be_bytes() {
+                    self.push_on_stack(b);
+                }
+                self.push_on_stack(self.registers.status.bits());
+                let pcl = self.memory.get_byte(0xFFFE);
+                let pch = self.memory.get_byte(0xFFFF);
+                self.jump((u16::from(pch) << 8) | u16::from(pcl));
+                self.registers.status.or(Status::PS_DISABLE_INTERRUPTS);
+            },
             (_, _) => {
-                println!("can't execute {:?}", decoded_instr)
+                panic!("can't execute {:?}", decoded_instr);
             },
         }
     }
@@ -274,5 +282,18 @@ impl<M: Bus, V: Variant> CPU<M, V> {
         );
 
         self.load_a(result);
+    }
+
+    fn push_on_stack(&mut self, val: u8) {
+        let addr = self.registers.stkp.to_u16();
+        self.memory.set_byte(addr, val);
+        self.registers.stkp.decrement();
+    }
+
+    fn pull_from_stack(&mut self) -> u8 {
+        let addr = self.registers.stkp.to_u16();
+        let out = self.memory.get_byte(addr);
+        self.registers.stkp.increment();
+        out
     }
 }
