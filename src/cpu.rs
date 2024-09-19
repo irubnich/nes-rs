@@ -109,7 +109,6 @@ impl<M: Bus, V: Variant> CPU<M, V> {
         match decoded_instr {
             (Instruction::LDA, OpInput::UseAddress(addr)) => {
                 let val = self.memory.get_byte(addr);
-                println!("LDA addr: {:?} value: {}", addr, val);
                 self.load_a(val);
             },
             (Instruction::SEC, OpInput::UseImplied) => {
@@ -157,6 +156,33 @@ impl<M: Bus, V: Variant> CPU<M, V> {
                 self.jump((u16::from(pch) << 8) | u16::from(pcl));
                 self.registers.status.or(Status::PS_DISABLE_INTERRUPTS);
             },
+            (Instruction::EOR, OpInput::UseAddress(addr)) => {
+                let val = self.memory.get_byte(addr);
+                self.xor(val);
+            }
+            (Instruction::ORA, OpInput::UseAddress(addr)) => {
+                let val = self.memory.get_byte(addr);
+                self.inclusive_or(val);
+            }
+            (Instruction::LDA, OpInput::UseImmediate(val)) => {
+                self.load_a(val);
+            }
+            (Instruction::ADC, OpInput::UseImmediate(val)) => {
+                self.add_with_carry(val);
+            }
+            (Instruction::ADC, OpInput::UseAddress(addr)) => {
+                let val = self.memory.get_byte(addr);
+                self.add_with_carry(val);
+            }
+            (Instruction::LDX, OpInput::UseImmediate(val)) => {
+                self.load_x(val);
+            }
+            (Instruction::LDY, OpInput::UseImmediate(val)) => {
+                self.load_y(val);
+            }
+            (Instruction::NOP, OpInput::UseImplied) => {
+                // noop
+            }
             (_, _) => {
                 panic!("can't execute {:?}", decoded_instr);
             },
@@ -204,7 +230,6 @@ impl<M: Bus, V: Variant> CPU<M, V> {
             &mut self.registers.status,
             value,
         );
-        println!("LOAD A {}", value)
     }
 
     fn load_x(&mut self, value: u8) {
@@ -213,7 +238,6 @@ impl<M: Bus, V: Variant> CPU<M, V> {
             &mut self.registers.status,
             value,
         );
-        println!("LOAD A {}", value)
     }
 
     fn load_y(&mut self, value: u8) {
@@ -222,7 +246,6 @@ impl<M: Bus, V: Variant> CPU<M, V> {
             &mut self.registers.status,
             value,
         );
-        println!("LOAD A {}", value)
     }
 
     fn jump(&mut self, addr: u16) {
@@ -239,6 +262,45 @@ impl<M: Bus, V: Variant> CPU<M, V> {
         if self.registers.status.contains(Status::PS_NEGATIVE) {
             self.registers.pc = addr;
         }
+    }
+
+    fn add_with_carry(&mut self, value: u8) {
+        const fn decimal_adjust(result: u8) -> u8 {
+            let bcd1: u8 = if (result & 0x0F) > 0x09 { 0x06 } else { 0x00 };
+            let bcd2: u8 = if (result.wrapping_add(bcd1) & 0xF0) > 0x90 {
+                0x60
+            } else {
+                0x00
+            };
+
+            result.wrapping_add(bcd1).wrapping_add(bcd2)
+        }
+
+        let a_before: u8 = self.registers.a;
+        let c_before: u8 = u8::from(self.registers.status.contains(Status::PS_CARRY));
+        let a_after: u8 = a_before.wrapping_add(c_before).wrapping_add(value);
+
+        let result: u8 = if self.registers.status.contains(Status::PS_DECIMAL_MODE) {
+            decimal_adjust(a_after)
+        } else {
+            a_after
+        };
+
+        let did_carry = (result < a_before) || (a_after == 0 && c_before == 0x01) || (value == 0xFF && c_before == 0x01);
+        let did_overflow = (a_before > 127 && value > 127 && a_after < 128) || (a_before < 128 && value < 128 && a_after > 127);
+
+        let mask = Status::PS_CARRY | Status::PS_OVERFLOW;
+
+        self.registers.status.set_with_mask(
+            mask,
+            Status::new(StatusArgs {
+                C: did_carry,
+                V: did_overflow,
+                ..StatusArgs::none()
+            }),
+        );
+
+        self.load_a(result);
     }
 
     fn subtract_with_carry(&mut self, value: u8) {
@@ -295,5 +357,15 @@ impl<M: Bus, V: Variant> CPU<M, V> {
         let out = self.memory.get_byte(addr);
         self.registers.stkp.increment();
         out
+    }
+
+    fn xor(&mut self, val: u8) {
+        let a_after = self.registers.a ^ val;
+        self.load_a(a_after);
+    }
+
+    fn inclusive_or(&mut self, val: u8) {
+        let a_after = self.registers.a | val;
+        self.load_a(a_after);
     }
 }

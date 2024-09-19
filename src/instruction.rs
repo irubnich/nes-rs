@@ -1,10 +1,12 @@
+use std::ops::Add;
+
 #[derive(Debug)]
 pub enum Instruction {
     BRK, STA, JMP,
     ORA, LDX, LDY,
     LDA, STX, STY,
-    SEC,
-    SBC,
+    SEC, EOR, ADC,
+    SBC, NOP,
     BEQ,
     BMI
 }
@@ -67,18 +69,31 @@ impl crate::Variant for Nmos6502 {
             0x05 => Some((Instruction::ORA, AddressingMode::ZP0)),
             0x07 => None,
             0x30 => Some((Instruction::BMI, AddressingMode::REL)),
+            0x33 => None,
             0x38 => Some((Instruction::SEC, AddressingMode::IMP)),
             0x4C => Some((Instruction::JMP, AddressingMode::ABS)),
+            0x61 => Some((Instruction::ADC, AddressingMode::IZX)),
+            0x65 => Some((Instruction::ADC, AddressingMode::ZP0)),
+            0x69 => Some((Instruction::ADC, AddressingMode::IMM)),
+            0x6D => Some((Instruction::ADC, AddressingMode::ABS)),
+            0x71 => Some((Instruction::ADC, AddressingMode::IZY)),
+            0x75 => Some((Instruction::ADC, AddressingMode::ZPX)),
+            0x79 => Some((Instruction::ADC, AddressingMode::ABY)),
+            0x7D => Some((Instruction::ADC, AddressingMode::ABX)),
             0x84 => Some((Instruction::STY, AddressingMode::ZP0)),
             0x85 => Some((Instruction::STA, AddressingMode::ZP0)),
             0x86 => Some((Instruction::STX, AddressingMode::ZP0)),
+            0xA0 => Some((Instruction::LDY, AddressingMode::IMM)),
+            0xA2 => Some((Instruction::LDX, AddressingMode::IMM)),
             0xA4 => Some((Instruction::LDY, AddressingMode::ZP0)),
             0xA5 => Some((Instruction::LDA, AddressingMode::ZP0)),
             0xA6 => Some((Instruction::LDX, AddressingMode::ZP0)),
+            0xA9 => Some((Instruction::LDA, AddressingMode::IMM)),
             0xE5 => Some((Instruction::SBC, AddressingMode::ZP0)),
+            0xEA => Some((Instruction::NOP, AddressingMode::IMP)),
             0xF0 => Some((Instruction::BEQ, AddressingMode::REL)),
             0xFF => None,
-            _ => None,
+            x => panic!("FAIL decode {:X}", x),
         }
     }
 }
