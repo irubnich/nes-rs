@@ -1,12 +1,13 @@
-use rs6502::Variant;
-use rs6502::memory::Bus;
-use rs6502::registers::{Registers, Status, StatusArgs};
-use rs6502::instruction::{AddressingMode, DecodedInstr, Instruction, OpInput};
+use crate::Variant;
+use crate::memory::Bus;
+use crate::registers::{Registers, StackPointer, Status, StatusArgs};
+use crate::instruction::{Instruction, DecodedInstr, AddressingMode, OpInput};
 
 fn address_from_bytes(lo: u8, hi: u8) -> u16 {
     u16::from(lo) + (u16::from(hi) << 8usize)
 }
 
+#[derive(Default)]
 pub struct CPU<M, V>
 where
     M: Bus,
@@ -27,7 +28,17 @@ impl<M: Bus, V: Variant> CPU<M, V> {
     }
 
     pub fn reset(&mut self) {
-        // noop
+        let addr = 0xFFFC;
+        let lo: u16 = self.memory.get_byte(addr).into();
+        let hi: u16 = self.memory.get_byte(addr + 1).into();
+        self.registers.pc = (hi << 8) | lo;
+
+        self.registers.a = 0;
+        self.registers.x = 0;
+        self.registers.y = 0;
+        self.registers.stkp = StackPointer(0xFD);
+        self.registers.status = Status::empty();
+        self.registers.status.or(Status::PS_UNUSED);
     }
 
     pub fn fetch_next_and_decode(&mut self) -> Option<DecodedInstr> {

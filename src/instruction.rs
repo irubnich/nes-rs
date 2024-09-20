@@ -1,5 +1,3 @@
-use std::ops::Add;
-
 #[derive(Debug)]
 pub enum Instruction {
     BRK, STA, JMP,
@@ -56,6 +54,7 @@ impl AddressingMode {
 
 pub type DecodedInstr = (Instruction, OpInput);
 
+#[derive(Default)]
 pub struct Nmos6502;
 
 impl crate::Variant for Nmos6502 {

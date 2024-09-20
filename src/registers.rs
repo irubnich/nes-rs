@@ -26,7 +26,7 @@ impl StatusArgs {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct StackPointer(pub u8);
 
 impl StackPointer {
@@ -44,6 +44,7 @@ impl StackPointer {
     }
 }
 
+#[derive(Default)]
 pub struct Registers {
     pub a: u8,
     pub x: u8,
