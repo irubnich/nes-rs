@@ -319,7 +319,15 @@ impl CPU {
             (Instruction::CPY, OpInput::UseImmediate(val)) => {
                 self.compare_with_y_register(val);
             }
+            (Instruction::CPY, OpInput::UseAddress(addr)) => {
+                let val = self.get_byte(addr);
+                self.compare_with_y_register(val);
+            }
             (Instruction::CPX, OpInput::UseImmediate(val)) => {
+                self.compare_with_x_register(val);
+            }
+            (Instruction::CPX, OpInput::UseAddress(addr)) => {
+                let val = self.get_byte(addr);
                 self.compare_with_x_register(val);
             }
             (Instruction::SBC, OpInput::UseImmediate(val)) => {
@@ -366,24 +374,54 @@ impl CPU {
                 CPU::shift_right_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
             }
+            (Instruction::LSR, OpInput::UseAddress(addr)) => {
+                let mut operand = self.get_byte(addr);
+                CPU::shift_right_with_flags(&mut operand, &mut self.registers.status);
+                self.set_byte(addr, operand);
+            }
             (Instruction::ASL, OpInput::UseImplied) => {
                 let mut val = self.registers.a;
                 CPU::shift_left_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
+            }
+            (Instruction::ASL, OpInput::UseAddress(addr)) => {
+                let mut operand = self.get_byte(addr);
+                CPU::shift_left_with_flags(&mut operand, &mut self.registers.status);
+                self.set_byte(addr, operand);
             }
             (Instruction::ROR, OpInput::UseImplied) => {
                 let mut val = self.registers.a;
                 CPU::rotate_right_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
             }
+            (Instruction::ROR, OpInput::UseAddress(addr)) => {
+                let mut operand = self.get_byte(addr);
+                CPU::rotate_right_with_flags(&mut operand, &mut self.registers.status);
+                self.set_byte(addr, operand);
+            }
             (Instruction::ROL, OpInput::UseImplied) => {
                 let mut val = self.registers.a;
                 CPU::rotate_left_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
             }
+            (Instruction::ROL, OpInput::UseAddress(addr)) => {
+                let mut operand = self.get_byte(addr);
+                CPU::rotate_left_with_flags(&mut operand, &mut self.registers.status);
+                self.set_byte(addr, operand);
+            }
             (Instruction::AND, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.and(val);
+            }
+            (Instruction::INC, OpInput::UseAddress(addr)) => {
+                let mut operand = self.get_byte(addr);
+                CPU::increment(&mut operand, &mut self.registers.status);
+                self.set_byte(addr, operand);
+            }
+            (Instruction::DEC, OpInput::UseAddress(addr)) => {
+                let mut operand = self.get_byte(addr);
+                CPU::decrement(&mut operand, &mut self.registers.status);
+                self.set_byte(addr, operand);
             }
 
             (Instruction::NOP, OpInput::UseImplied) => {
