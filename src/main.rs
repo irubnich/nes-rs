@@ -19,7 +19,7 @@ fn main() {
 
     println!("PC: 0x{:X}", cpu.registers.pc);
     println!("SP: {:X}", cpu.registers.stkp.0);
-    println!("Status: {:?}", cpu.registers.status);
+    println!("Status: {:b}", cpu.registers.status.bits());
 
     //let r = iced::run("title", update, view);
     // r

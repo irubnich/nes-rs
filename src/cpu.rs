@@ -436,6 +436,9 @@ impl CPU {
             (Instruction::NOP, OpInput::UseImplied) => {
                 // noop
             }
+            (Instruction::NOP, OpInput::UseAddress(_addr)) => {
+                // noop
+            }
             (_, _) => {
                 panic!("can't execute {:?}", decoded_instr);
             },
