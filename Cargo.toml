@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 bitflags = "2.5.0"
 iced = "0.13.1"
+nom = "~7.1"

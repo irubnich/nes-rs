@@ -28,10 +28,9 @@ impl CPU {
     }
 
     pub fn reset(&mut self) {
-        let addr = 0xFFFC;
-        let lo: u16 = self.get_byte(addr).into();
-        let hi: u16 = self.get_byte(addr + 1).into();
-        self.registers.pc = (hi << 8) | lo;
+        let lo = self.get_byte(0xFFFC);
+        let hi = self.get_byte(0xFFFD);
+        self.registers.pc = u16::from_be_bytes([hi, lo]);
 
         self.registers.a = 0;
         self.registers.x = 0;
@@ -156,14 +155,27 @@ impl CPU {
                 self.set_byte(addr, self.registers.y);
             },
             (Instruction::BRK, OpInput::UseImplied) => {
-                for b in self.registers.pc.wrapping_sub(1).to_be_bytes() {
-                    self.push_on_stack(b);
-                }
+                // for b in self.registers.pc.wrapping_sub(1).to_be_bytes() {
+                //     self.push_on_stack(b);
+                // }
+                // self.push_on_stack(self.registers.status.bits());
+                // let pcl = self.get_byte(0xFFFE);
+                // let pch = self.get_byte(0xFFFF);
+                // self.jump((u16::from(pch) << 8) | u16::from(pcl));
+                // self.registers.status.or(Status::PS_DISABLE_INTERRUPTS);
+                // self.registers.pc += 1;
+                // self.registers.status.insert(Status::PS_DISABLE_INTERRUPTS);
+                // self.set_byte(0x0100 + self.registers.stkp.to_u16(), (self.registers.pc >> 8) & 0x00FF);
+
+                self.registers.pc += 1;
+                let hilo = self.registers.pc.to_be_bytes();
+                self.push_on_stack(hilo[0]);
+                self.push_on_stack(hilo[1]);
+                self.registers.status.insert(Status::PS_BRK);
                 self.push_on_stack(self.registers.status.bits());
-                let pcl = self.get_byte(0xFFFE);
-                let pch = self.get_byte(0xFFFF);
-                self.jump((u16::from(pch) << 8) | u16::from(pcl));
-                self.registers.status.or(Status::PS_DISABLE_INTERRUPTS);
+                self.registers.status.insert(Status::PS_DISABLE_INTERRUPTS);
+                self.registers.pc = u16::from_be_bytes([self.get_byte(0xFFFE), self.get_byte(0xFFFF)])
+
             },
             (Instruction::EOR, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
@@ -230,6 +242,7 @@ impl CPU {
     pub fn run(&mut self) {
         while let Some(decoded_instr) = self.fetch_next_and_decode() {
             self.execute_instruction(decoded_instr);
+            println!();
         }
     }
 

@@ -1,4 +1,9 @@
-use std::{fs::File, io::{Read, Seek}};
+use std::fs;
+
+use nom::bytes::complete::{tag, take};
+use nom::number::complete::u8;
+use nom::IResult;
+use nom::error::Error;
 
 use crate::mapper::Mapper;
 
@@ -10,76 +15,46 @@ pub struct Cartridge {
     mapper: Mapper,
 }
 
-#[derive(Debug)]
-pub struct Header {
-    name: [u8; 4],
-    prg_rom_chunks: u8,
-    chr_rom_chunks: u8,
-    mapper1: u8,
-    mapper2: u8,
-    prg_ram_size: u8,
-    tv_system1: u8,
-    tv_system2: u8,
-    unused: [u8; 5],
-}
-
 impl Cartridge {
     pub fn new(filename: String) -> Cartridge {
-        let mut file = File::open(filename).expect("file not opened");
+        let binding = fs::read(filename).expect("can't read cart");
+        let buf: &[u8] = binding.as_slice();
+        let cart = Cartridge::parse(buf);
+        cart.expect("can't parse cart").1
+    }
 
-        let mut name: [u8; 4] = [0; 4];
-        file.read(&mut name).expect("read name");
+    pub fn parse(i: &[u8]) -> IResult<&[u8], Self> {
+        let (i, _) = tag::<&[u8; 4], &[u8], Error<&[u8]>>(b"NES\x1A")(i).expect("nes");
+        let (i, prg_banks) = u8::<&[u8], Error<&[u8]>>(i).expect("prg_banks");
+        let (i, chr_banks) = u8::<&[u8], Error<&[u8]>>(i).expect("chr_banks");
+        let (i, flags_6) = u8::<&[u8], Error<&[u8]>>(i).expect("flags_6");
+        let (i, flags_7) = u8::<&[u8], Error<&[u8]>>(i).expect("flags_7");
+        let (i, size_prg_ram) = u8::<&[u8], Error<&[u8]>>(i).expect("size_prg_ram");
+        let (i, _flags_9) = u8::<&[u8], Error<&[u8]>>(i).expect("_flags_9");
+        let (i, _flags_10) = u8::<&[u8], Error<&[u8]>>(i).expect("_flags_11");
+        let (i, _) = take::<usize, &[u8], Error<&[u8]>>(5usize)(i).expect("unused");
+        let (i, prg) = take::<usize, &[u8], Error<&[u8]>>(0x4000 * prg_banks as usize)(i).expect("prg");
+        let (i, chr) = take::<usize, &[u8], Error<&[u8]>>(0x2000 * prg_banks as usize)(i).expect("chr");
 
-        let mut readed: [u8; 7] = [0; 7];
-        file.read(&mut readed).expect("read");
+        let n_mapper_id = (flags_6 >> 4) | (flags_7 & 0xF0);
+        if n_mapper_id != 0 {
+            panic!("unsupported mapper ID")
+        }
 
-        let header = Header {
-            name,
-            prg_rom_chunks: readed[0],
-            chr_rom_chunks: readed[1],
-            mapper1: readed[2],
-            mapper2: readed[3],
-            prg_ram_size: readed[4],
-            tv_system1: readed[5],
-            tv_system2: readed[6],
-            unused: [0; 5],
+        let cart = Cartridge {
+            v_prg_memory: prg.to_vec(),
+            v_chr_memory: chr.to_vec(),
+            mapper: Mapper::new(prg_banks, chr_banks),
+            b_image_valid: true,
         };
 
-        let mut cart = Cartridge {
-            b_image_valid: false,
-            v_prg_memory: vec![],
-            v_chr_memory: vec![],
-            mapper: Mapper::new(0, 0),
-        };
-
-        if (header.mapper1 & 0x04) > 0 {
-            file.seek_relative(512).expect("bad seek");
-        }
-
-        let n_mapper_id = ((header.mapper2 >> 4) << 4) | (header.mapper1 >> 4);
-        //let mirror = if header.mapper1 & 0x01 > 0 { 1 } else { 0 };
-
-        let n_file_type = 1;
-        if n_file_type == 1 {
-            cart.v_prg_memory.resize(header.prg_rom_chunks as usize * 16384, 0);
-            file.read(&mut cart.v_prg_memory).expect("v_prg_memory");
-
-            cart.v_chr_memory.resize(header.chr_rom_chunks as usize * 8192, 0);
-            file.read(&mut cart.v_chr_memory).expect("v_chr_memory");
-        }
-
-        if n_mapper_id == 0 {
-            cart.mapper = Mapper::new(header.prg_rom_chunks, header.chr_rom_chunks);
-        }
-
-        cart.b_image_valid = true;
-
-        cart
+        Ok((i, cart))
     }
 
     pub fn cpu_read(&self, addr: u16) -> (bool, u8) {
         match self.mapper.cpu_map_read(addr) {
             (true, mapped_addr) => {
+                println!("cart: read {:X}", mapped_addr);
                 return (true, self.v_prg_memory[mapped_addr as usize]);
             }
             _ => (false, 0)
