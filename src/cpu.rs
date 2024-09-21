@@ -75,6 +75,7 @@ impl CPU {
                 let y = self.registers.y;
 
                 let am_out = match am {
+                    AddressingMode::ACC => OpInput::UseImplied,
                     AddressingMode::IMP => OpInput::UseImplied,
                     AddressingMode::IMM => OpInput::UseImmediate(slice[0]),
                     AddressingMode::ZP0 => OpInput::UseAddress(u16::from(slice[0])),
@@ -213,6 +214,10 @@ impl CPU {
             (Instruction::CMP, OpInput::UseImmediate(val)) => {
                 self.compare_with_a_register(val);
             }
+            (Instruction::CMP, OpInput::UseAddress(addr)) => {
+                let val = self.get_byte(addr);
+                self.compare_with_a_register(val);
+            }
             (Instruction::BNE, OpInput::UseRelative(rel)) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_not_equal(addr);
@@ -332,6 +337,54 @@ impl CPU {
             (Instruction::DEX, OpInput::UseImplied) => {
                 CPU::decrement(&mut self.registers.x, &mut self.registers.status);
             }
+            (Instruction::TAY, OpInput::UseImplied) => {
+                self.load_y(self.registers.a);
+            }
+            (Instruction::TAX, OpInput::UseImplied) => {
+                self.load_x(self.registers.a);
+            }
+            (Instruction::TYA, OpInput::UseImplied) => {
+                self.load_a(self.registers.y);
+            }
+            (Instruction::TXA, OpInput::UseImplied) => {
+                self.load_a(self.registers.x);
+            }
+            (Instruction::TSX, OpInput::UseImplied) => {
+                let StackPointer(val) = self.registers.stkp;
+                self.load_x(val);
+            }
+            (Instruction::RTI, OpInput::UseImplied) => {
+                self.pull_from_stack();
+                let val = self.pull_from_stack();
+                self.registers.status = Status::from_bits_truncate(val);
+                let pcl = self.pull_from_stack();
+                let pch = self.fetch_from_stack();
+                self.registers.pc = address_from_bytes(pcl, pch);
+            }
+            (Instruction::LSR, OpInput::UseImplied) => {
+                let mut val = self.registers.a;
+                CPU::shift_right_with_flags(&mut val, &mut self.registers.status);
+                self.registers.a = val;
+            }
+            (Instruction::ASL, OpInput::UseImplied) => {
+                let mut val = self.registers.a;
+                CPU::shift_left_with_flags(&mut val, &mut self.registers.status);
+                self.registers.a = val;
+            }
+            (Instruction::ROR, OpInput::UseImplied) => {
+                let mut val = self.registers.a;
+                CPU::rotate_right_with_flags(&mut val, &mut self.registers.status);
+                self.registers.a = val;
+            }
+            (Instruction::ROL, OpInput::UseImplied) => {
+                let mut val = self.registers.a;
+                CPU::rotate_left_with_flags(&mut val, &mut self.registers.status);
+                self.registers.a = val;
+            }
+            (Instruction::AND, OpInput::UseAddress(addr)) => {
+                let val = self.get_byte(addr);
+                self.and(val);
+            }
 
             (Instruction::NOP, OpInput::UseImplied) => {
                 // noop
@@ -376,6 +429,67 @@ impl CPU {
     fn set_u8_with_flags(mem: &mut u8, status: &mut Status, value: u8) {
         *mem = value;
         CPU::set_flags_from_u8(status, value);
+    }
+
+    fn shift_right_with_flags(p_val: &mut u8, status: &mut Status) {
+        let mask = 1;
+        let is_bit_0_set = (*p_val & mask) == mask;
+        *p_val >>= 1;
+        status.set_with_mask(
+            Status::PS_CARRY,
+            Status::new(StatusArgs {
+                C: is_bit_0_set,
+                ..StatusArgs::none()
+            })
+        );
+        CPU::set_flags_from_u8(status, *p_val);
+    }
+
+    fn shift_left_with_flags(p_val: &mut u8, status: &mut Status) {
+        let mask = 1 << 7;
+        let is_bit_7_set = (*p_val & mask) == mask;
+        let shifted = (*p_val & !(1 << 7)) << 1;
+        *p_val = shifted;
+        status.set_with_mask(
+            Status::PS_CARRY,
+            Status::new(StatusArgs {
+                C: is_bit_7_set,
+                ..StatusArgs::none()
+            })
+        );
+        CPU::set_flags_from_u8(status, *p_val);
+    }
+
+    fn rotate_right_with_flags(p_val: &mut u8, status: &mut Status) {
+        let is_carry_set = status.contains(Status::PS_CARRY);
+        let mask = 1;
+        let is_bit_0_set = (*p_val & mask) == mask;
+        let shifted = *p_val >> 1;
+        *p_val = shifted + if is_carry_set { 1 << 7 } else { 0 };
+        status.set_with_mask(
+            Status::PS_CARRY,
+            Status::new(StatusArgs {
+                C: is_bit_0_set,
+                ..StatusArgs::none()
+            })
+        );
+        CPU::set_flags_from_u8(status, *p_val);
+    }
+
+    fn rotate_left_with_flags(p_val: &mut u8, status: &mut Status) {
+        let is_carry_set = status.contains(Status::PS_CARRY);
+        let mask = 1 << 7;
+        let is_bit_7_set = (*p_val & mask) == mask;
+        let shifted = (*p_val & !(1 << 7)) << 1;
+        *p_val = shifted + u8::from(is_carry_set);
+        status.set_with_mask(
+            Status::PS_CARRY,
+            Status::new(StatusArgs {
+                C: is_bit_7_set,
+                ..StatusArgs::none()
+            })
+        );
+        CPU::set_flags_from_u8(status, *p_val);
     }
 
     fn load_a(&mut self, value: u8) {
