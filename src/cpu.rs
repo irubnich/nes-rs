@@ -223,6 +223,19 @@ impl CPU {
                 let pch: u8 = self.fetch_from_stack();
                 self.registers.pc = ((u16::from(pch) << 8) | u16::from(pcl)).wrapping_add(1);
             }
+            (Instruction::SEI, OpInput::UseImplied) => {
+                self.registers.status.or(Status::PS_DISABLE_INTERRUPTS);
+            }
+            (Instruction::CLD, OpInput::UseImplied) => {
+                self.registers.status.and(!Status::PS_DECIMAL_MODE);
+            }
+            (Instruction::TXS, OpInput::UseImplied) => {
+                self.registers.stkp = StackPointer(self.registers.x);
+            }
+            (Instruction::BPL, OpInput::UseRelative(rel)) => {
+                let addr = self.registers.pc.wrapping_add(rel);
+                self.branch_if_positive(addr);
+            }
 
             (Instruction::NOP, OpInput::UseImplied) => {
                 // noop
@@ -311,6 +324,12 @@ impl CPU {
 
     fn branch_if_minus(&mut self, addr: u16) {
         if self.registers.status.contains(Status::PS_NEGATIVE) {
+            self.registers.pc = addr;
+        }
+    }
+
+    fn branch_if_positive(&mut self, addr: u16) {
+        if !self.registers.status.contains(Status::PS_NEGATIVE) {
             self.registers.pc = addr;
         }
     }

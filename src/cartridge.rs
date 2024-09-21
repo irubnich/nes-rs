@@ -54,7 +54,6 @@ impl Cartridge {
     pub fn cpu_read(&self, addr: u16) -> (bool, u8) {
         match self.mapper.cpu_map_read(addr) {
             (true, mapped_addr) => {
-                println!("cart: read {:X}", mapped_addr);
                 return (true, self.v_prg_memory[mapped_addr as usize]);
             }
             _ => (false, 0)
