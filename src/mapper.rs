@@ -22,8 +22,6 @@ impl Mapper {
             return (true, (addr - 0xC000).into());
         }
 
-        println!("mapper: mapped {:X} to nothing (0)", addr);
-
         (false, 0)
     }
 

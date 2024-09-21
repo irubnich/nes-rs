@@ -8,6 +8,7 @@ fn main() {
     let mut cpu = CPU::new(bus);
 
     cpu.reset();
+    cpu.registers.pc = 0xC000;
     cpu.run();
 
     println!("=============================================");

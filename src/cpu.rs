@@ -236,6 +236,102 @@ impl CPU {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_positive(addr);
             }
+            (Instruction::BCS, OpInput::UseRelative(rel)) => {
+                let addr = self.registers.pc.wrapping_add(rel);
+                self.branch_if_carry_set(addr);
+            }
+            (Instruction::CLC, OpInput::UseImplied) => {
+                self.registers.status.and(!Status::PS_CARRY);
+            }
+            (Instruction::BCC, OpInput::UseRelative(rel)) => {
+                let addr = self.registers.pc.wrapping_add(rel);
+                self.branch_if_carry_clear(addr);
+            }
+            (Instruction::BIT, OpInput::UseAddress(addr)) => {
+                let a = self.registers.a;
+                let m = self.get_byte(addr);
+                let res = a & m;
+
+                let is_zero = 0 == res;
+                let is_negative = 0 != (0x80 & m);
+                let v = 0 != (0x40 & m);
+
+                self.registers.status.set_with_mask(
+                    Status::PS_ZERO | Status::PS_NEGATIVE | Status::PS_OVERFLOW,
+                    Status::new(StatusArgs {
+                        Z: is_zero,
+                        N: is_negative,
+                        V: v,
+                        ..StatusArgs::none()
+                    })
+                );
+            }
+            (Instruction::BVS, OpInput::UseRelative(rel)) => {
+                let addr = self.registers.pc.wrapping_add(rel);
+                self.branch_if_overflow_set(addr);
+            }
+            (Instruction::BVC, OpInput::UseRelative(rel)) => {
+                let addr = self.registers.pc.wrapping_add(rel);
+                self.branch_if_overflow_clear(addr);
+            }
+            (Instruction::SED, OpInput::UseImplied) => {
+                self.registers.status.or(Status::PS_DECIMAL_MODE);
+            }
+            (Instruction::PHP, OpInput::UseImplied) => {
+                let val = self.registers.status.bits() | 0x30;
+                self.push_on_stack(val);
+            }
+            (Instruction::PLA, OpInput::UseImplied) => {
+                self.pull_from_stack();
+                let val = self.fetch_from_stack();
+                self.registers.a = val;
+                self.registers.status.set_with_mask(
+                    Status::PS_ZERO | Status::PS_NEGATIVE,
+                    Status::new(StatusArgs {
+                        Z: val == 0,
+                        N: self.registers.a > 127,
+                        ..StatusArgs::none()
+                    })
+                );
+            }
+            (Instruction::AND, OpInput::UseImmediate(val)) => {
+                self.and(val);
+            }
+            (Instruction::PLP, OpInput::UseImplied) => {
+                self.pull_from_stack();
+                let val = self.fetch_from_stack();
+                self.registers.status = Status::from_bits_truncate(val);
+            }
+            (Instruction::ORA, OpInput::UseImmediate(val)) => {
+                self.inclusive_or(val);
+            }
+            (Instruction::CLV, OpInput::UseImplied) => {
+                self.registers.status.and(!Status::PS_OVERFLOW);
+            }
+            (Instruction::EOR, OpInput::UseImmediate(val)) => {
+                self.exclusive_or(val);
+            }
+            (Instruction::CPY, OpInput::UseImmediate(val)) => {
+                self.compare_with_y_register(val);
+            }
+            (Instruction::CPX, OpInput::UseImmediate(val)) => {
+                self.compare_with_x_register(val);
+            }
+            (Instruction::SBC, OpInput::UseImmediate(val)) => {
+                self.subtract_with_carry(val);
+            }
+            (Instruction::INY, OpInput::UseImplied) => {
+                CPU::increment(&mut self.registers.y, &mut self.registers.status);
+            }
+            (Instruction::INX, OpInput::UseImplied) => {
+                CPU::increment(&mut self.registers.x, &mut self.registers.status);
+            }
+            (Instruction::DEY, OpInput::UseImplied) => {
+                CPU::decrement(&mut self.registers.y, &mut self.registers.status);
+            }
+            (Instruction::DEX, OpInput::UseImplied) => {
+                CPU::decrement(&mut self.registers.x, &mut self.registers.status);
+            }
 
             (Instruction::NOP, OpInput::UseImplied) => {
                 // noop
@@ -330,6 +426,30 @@ impl CPU {
 
     fn branch_if_positive(&mut self, addr: u16) {
         if !self.registers.status.contains(Status::PS_NEGATIVE) {
+            self.registers.pc = addr;
+        }
+    }
+
+    fn branch_if_carry_set(&mut self, addr: u16) {
+        if self.registers.status.contains(Status::PS_CARRY) {
+            self.registers.pc = addr;
+        }
+    }
+
+    fn branch_if_carry_clear(&mut self, addr: u16) {
+        if !self.registers.status.contains(Status::PS_CARRY) {
+            self.registers.pc = addr;
+        }
+    }
+
+    fn branch_if_overflow_set(&mut self, addr: u16) {
+        if self.registers.status.contains(Status::PS_OVERFLOW) {
+            self.registers.pc = addr;
+        }
+    }
+
+    fn branch_if_overflow_clear(&mut self, addr: u16) {
+        if !self.registers.status.contains(Status::PS_OVERFLOW) {
             self.registers.pc = addr;
         }
     }
@@ -443,6 +563,11 @@ impl CPU {
         self.load_a(a_after);
     }
 
+    fn exclusive_or(&mut self, val: u8) {
+        let a_after = self.registers.a ^ val;
+        self.load_a(a_after);
+    }
+
     fn compare(&mut self, r: u8, val: u8) {
         if r >= val {
             self.registers.status.insert(Status::PS_CARRY);
@@ -466,5 +591,51 @@ impl CPU {
 
     fn compare_with_a_register(&mut self, val: u8) {
         self.compare(self.registers.a, val);
+    }
+
+    fn compare_with_y_register(&mut self, val: u8) {
+        self.compare(self.registers.y, val);
+    }
+
+    fn compare_with_x_register(&mut self, val: u8) {
+        self.compare(self.registers.x, val);
+    }
+
+    fn and(&mut self, value: u8) {
+        let a_after = self.registers.a & value;
+        self.load_a(a_after);
+    }
+
+    fn increment(val: &mut u8, flags: &mut Status) {
+        let value_new = val.wrapping_add(1);
+        *val = value_new;
+
+        let is_zero = value_new == 0;
+
+        flags.set_with_mask(
+            Status::PS_NEGATIVE | Status::PS_ZERO,
+            Status::new(StatusArgs {
+                N: Self::value_is_negative(value_new),
+                Z: is_zero,
+                ..StatusArgs::none()
+            })
+        );
+    }
+
+    fn decrement(val: &mut u8, flags: &mut Status) {
+        let value_new = val.wrapping_sub(1);
+        *val = value_new;
+
+        let is_zero = value_new == 0;
+        let is_negative = Self::value_is_negative(value_new);
+
+        flags.set_with_mask(
+            Status::PS_NEGATIVE | Status::PS_ZERO,
+            Status::new(StatusArgs {
+                N: is_negative,
+                Z: is_zero,
+                ..StatusArgs::none()
+            })
+        );
     }
 }
