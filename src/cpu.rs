@@ -104,6 +104,15 @@ impl CPU {
                         let slice = self.read_address(u16::from(start));
                         OpInput::UseAddress(address_from_bytes(slice[0], slice[1]).wrapping_add(y.into()))
                     },
+                    AddressingMode::BuggyIndirect => {
+                        let pointer = address_from_bytes(slice[0], slice[1]);
+                        let low_byte_of_target = self.get_byte(pointer);
+                        let low_byte_of_incremented_pointer = pointer.to_le_bytes()[0].wrapping_add(1);
+                        let incremented_pointer = u16::from_le_bytes([low_byte_of_incremented_pointer, pointer.to_le_bytes()[1]]);
+
+                        let high_byte_of_target = self.get_byte(incremented_pointer);
+                        OpInput::UseAddress(address_from_bytes(low_byte_of_target, high_byte_of_target))
+                    }
                 };
 
                 self.registers.pc = self.registers.pc.wrapping_add(num_bytes);
