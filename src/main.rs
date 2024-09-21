@@ -1,17 +1,13 @@
-use rs6502::cpu::CPU;
 use iced::widget::text;
 use iced::Element;
 use rs6502::bus::Bus;
 use rs6502::cartridge::Cartridge;
-use rs6502::memory::Memory;
-use rs6502::instruction::Nmos6502;
-
-mod cpu;
+use rs6502::cpu::CPU;
 
 fn main() {// -> iced::Result {
-    let mut cpu = cpu::CPU::new(Memory::new(), Nmos6502);
-    let cart = Cartridge::new(String::from("01-basics.nes"));
-    let bus = Bus::new(cpu, cart);
+    let cart = Cartridge::new(String::from("nestest.nes"));
+    let bus = Bus::new(cart);
+    let mut cpu = CPU::new(bus);
 
     // cpu.memory.set_bytes(0x0000, &zero_page_data);
     // cpu.memory.set_bytes(0xE000, &[0]);
@@ -21,7 +17,7 @@ fn main() {// -> iced::Result {
     //let r = iced::run("title", update, view);
 
     cpu.reset();
-    //cpu.run();
+    cpu.run();
 
     println!("=============================================");
     //println!("ZP: [{}, {}]", zero_page_data[0], zero_page_data[1]);
@@ -36,11 +32,11 @@ fn main() {// -> iced::Result {
     // r
 }
 
-fn update(cpu: &mut CPU<Memory, Nmos6502>, message: Message) {
+fn update(cpu: &mut CPU, message: Message) {
     cpu.run();
 }
 
-fn view(cpu: &CPU<Memory, Nmos6502>) -> Element<Message> {
+fn view(cpu: &CPU) -> Element<Message> {
     text(cpu.registers.x)
         .size(20)
         .into()

@@ -1,36 +1,36 @@
-use crate::Variant;
-use crate::memory::Bus;
 use crate::registers::{Registers, StackPointer, Status, StatusArgs};
-use crate::instruction::{Instruction, DecodedInstr, AddressingMode, OpInput};
+use crate::instruction::{DecodedInstr, Nmos6502, AddressingMode, OpInput, Instruction};
+use crate::bus::Bus;
 
 fn address_from_bytes(lo: u8, hi: u8) -> u16 {
     u16::from(lo) + (u16::from(hi) << 8usize)
 }
 
-#[derive(Default)]
-pub struct CPU<M, V>
-where
-    M: Bus,
-    V: Variant,
-{
+pub struct CPU {
     pub registers: Registers,
-    pub memory: M,
-    variant: core::marker::PhantomData<V>,
+    bus: Bus,
 }
 
-impl<M: Bus, V: Variant> CPU<M, V> {
-    pub fn new(memory: M, _variant: V) -> CPU<M, V> {
+impl CPU {
+    pub fn new(bus: Bus) -> CPU {
         CPU {
             registers: Registers::new(),
-            memory,
-            variant: core::marker::PhantomData::<V>,
+            bus,
         }
+    }
+
+    fn get_byte(&mut self, address: u16) -> u8 {
+        self.bus.cpu_read(address)
+    }
+
+    fn set_byte(&mut self, address: u16, value: u8) {
+        self.bus.cpu_write(address, value);
     }
 
     pub fn reset(&mut self) {
         let addr = 0xFFFC;
-        let lo: u16 = self.memory.get_byte(addr).into();
-        let hi: u16 = self.memory.get_byte(addr + 1).into();
+        let lo: u16 = self.get_byte(addr).into();
+        let hi: u16 = self.get_byte(addr + 1).into();
         self.registers.pc = (hi << 8) | lo;
 
         self.registers.a = 0;
@@ -41,18 +41,18 @@ impl<M: Bus, V: Variant> CPU<M, V> {
         self.registers.status.or(Status::PS_UNUSED);
     }
 
-    pub fn fetch_next_and_decode(&mut self) -> Option<DecodedInstr> {
-        fn read_address<M: Bus>(mem: &mut M, addr: u16) -> [u8; 2] {
-            let lo = mem.get_byte(addr);
-            let hi = mem.get_byte(addr.wrapping_add(1));
+    fn read_address(&mut self, addr: u16) -> [u8; 2] {
+            let lo = self.get_byte(addr);
+            let hi = self.get_byte(addr.wrapping_add(1));
             [lo, hi]
-        }
-        
-        let x: u8 = self.memory.get_byte(self.registers.pc);
+    }
+
+    pub fn fetch_next_and_decode(&mut self) -> Option<DecodedInstr> {
+        let x: u8 = self.get_byte(self.registers.pc);
 
         println!("at PC: {:X}", self.registers.pc);
         println!("decoding opcode {:X}", x);
-        match V::decode(x) {
+        match Nmos6502::decode(x) {
             Some((instr, am)) => {
                 let extra_bytes = am.extra_bytes();
                 let num_bytes = extra_bytes + 1;
@@ -62,11 +62,11 @@ impl<M: Bus, V: Variant> CPU<M, V> {
                 let slice = if extra_bytes == 0 {
                     [0, 0]
                 } else if extra_bytes == 1 {
-                    [self.memory.get_byte(data_start), 0]
+                    [self.get_byte(data_start), 0]
                 } else if extra_bytes == 2 {
                     [
-                        self.memory.get_byte(data_start),
-                        self.memory.get_byte(data_start.wrapping_add(1)),
+                        self.get_byte(data_start),
+                        self.get_byte(data_start.wrapping_add(1)),
                     ]
                 } else {
                     panic!()
@@ -74,8 +74,6 @@ impl<M: Bus, V: Variant> CPU<M, V> {
 
                 let x = self.registers.x;
                 let y = self.registers.y;
-
-                let memory = &mut self.memory;
 
                 let am_out = match am {
                     AddressingMode::IMP => OpInput::UseImplied,
@@ -93,17 +91,17 @@ impl<M: Bus, V: Variant> CPU<M, V> {
                     AddressingMode::ABX => OpInput::UseAddress(address_from_bytes(slice[0], slice[1]).wrapping_add(x.into())),
                     AddressingMode::ABY => OpInput::UseAddress(address_from_bytes(slice[0], slice[1]).wrapping_add(y.into())),
                     AddressingMode::IND => {
-                        let slice = read_address(memory, address_from_bytes(slice[0], slice[1]));
+                        let slice = self.read_address(address_from_bytes(slice[0], slice[1]));
                         OpInput::UseAddress(address_from_bytes(slice[0], slice[1]))
                     },
                     AddressingMode::IZX => {
                         let start = slice[0].wrapping_add(x);
-                        let slice = read_address(memory, u16::from(start));
+                        let slice = self.read_address(u16::from(start));
                         OpInput::UseAddress(address_from_bytes(slice[0], slice[1]))
                     }
                     AddressingMode::IZY => {
                         let start = slice[0];
-                        let slice = read_address(memory, u16::from(start));
+                        let slice = self.read_address(u16::from(start));
                         OpInput::UseAddress(address_from_bytes(slice[0], slice[1]).wrapping_add(y.into()))
                     },
                 };
@@ -119,14 +117,14 @@ impl<M: Bus, V: Variant> CPU<M, V> {
     pub fn execute_instruction(&mut self, decoded_instr: DecodedInstr) {
         match decoded_instr {
             (Instruction::LDA, OpInput::UseAddress(addr)) => {
-                let val = self.memory.get_byte(addr);
+                let val = self.get_byte(addr);
                 self.load_a(val);
             },
             (Instruction::SEC, OpInput::UseImplied) => {
                 self.registers.status.or(Status::PS_CARRY);
             },
             (Instruction::SBC, OpInput::UseAddress(addr)) => {
-                let val = self.memory.get_byte(addr);
+                let val = self.get_byte(addr);
                 self.subtract_with_carry(val);
             }
             (Instruction::BEQ, OpInput::UseRelative(rel)) => {
@@ -138,41 +136,41 @@ impl<M: Bus, V: Variant> CPU<M, V> {
                 self.branch_if_minus(addr)
             },
             (Instruction::STA, OpInput::UseAddress(addr)) => {
-                self.memory.set_byte(addr, self.registers.a);
+                self.set_byte(addr, self.registers.a);
             },
             (Instruction::JMP, OpInput::UseAddress(addr)) => {
                 self.jump(addr);
             },
             (Instruction::LDX, OpInput::UseAddress(addr)) => {
-                let val = self.memory.get_byte(addr);
+                let val = self.get_byte(addr);
                 self.load_x(val);
             },
             (Instruction::LDY, OpInput::UseAddress(addr)) => {
-                let val = self.memory.get_byte(addr);
+                let val = self.get_byte(addr);
                 self.load_y(val);
             },
             (Instruction::STX, OpInput::UseAddress(addr)) => {
-                self.memory.set_byte(addr, self.registers.x);
+                self.set_byte(addr, self.registers.x);
             },
             (Instruction::STY, OpInput::UseAddress(addr)) => {
-                self.memory.set_byte(addr, self.registers.y);
+                self.set_byte(addr, self.registers.y);
             },
             (Instruction::BRK, OpInput::UseImplied) => {
                 for b in self.registers.pc.wrapping_sub(1).to_be_bytes() {
                     self.push_on_stack(b);
                 }
                 self.push_on_stack(self.registers.status.bits());
-                let pcl = self.memory.get_byte(0xFFFE);
-                let pch = self.memory.get_byte(0xFFFF);
+                let pcl = self.get_byte(0xFFFE);
+                let pch = self.get_byte(0xFFFF);
                 self.jump((u16::from(pch) << 8) | u16::from(pcl));
                 self.registers.status.or(Status::PS_DISABLE_INTERRUPTS);
             },
             (Instruction::EOR, OpInput::UseAddress(addr)) => {
-                let val = self.memory.get_byte(addr);
+                let val = self.get_byte(addr);
                 self.xor(val);
             }
             (Instruction::ORA, OpInput::UseAddress(addr)) => {
-                let val = self.memory.get_byte(addr);
+                let val = self.get_byte(addr);
                 self.inclusive_or(val);
             }
             (Instruction::LDA, OpInput::UseImmediate(val)) => {
@@ -182,7 +180,7 @@ impl<M: Bus, V: Variant> CPU<M, V> {
                 self.add_with_carry(val);
             }
             (Instruction::ADC, OpInput::UseAddress(addr)) => {
-                let val = self.memory.get_byte(addr);
+                let val = self.get_byte(addr);
                 self.add_with_carry(val);
             }
             (Instruction::LDX, OpInput::UseImmediate(val)) => {
@@ -190,6 +188,22 @@ impl<M: Bus, V: Variant> CPU<M, V> {
             }
             (Instruction::LDY, OpInput::UseImmediate(val)) => {
                 self.load_y(val);
+            }
+            (Instruction::PHA, OpInput::UseImplied) => {
+                self.push_on_stack(self.registers.a);
+            }
+            (Instruction::JSR, OpInput::UseAddress(addr)) => {
+                for b in self.registers.pc.wrapping_sub(1).to_be_bytes() {
+                    self.push_on_stack(b);
+                }
+                self.jump(addr);
+            }
+            (Instruction::CMP, OpInput::UseImmediate(val)) => {
+                self.compare_with_a_register(val);
+            }
+            (Instruction::BNE, OpInput::UseRelative(rel)) => {
+                let addr = self.registers.pc.wrapping_add(rel);
+                self.branch_if_not_equal(addr);
             }
             (Instruction::NOP, OpInput::UseImplied) => {
                 // noop
@@ -232,11 +246,11 @@ impl<M: Bus, V: Variant> CPU<M, V> {
 
     fn set_u8_with_flags(mem: &mut u8, status: &mut Status, value: u8) {
         *mem = value;
-        CPU::<M, V>::set_flags_from_u8(status, value);
+        CPU::set_flags_from_u8(status, value);
     }
 
     fn load_a(&mut self, value: u8) {
-        CPU::<M, V>::set_u8_with_flags(
+        CPU::set_u8_with_flags(
             &mut self.registers.a,
             &mut self.registers.status,
             value,
@@ -244,7 +258,7 @@ impl<M: Bus, V: Variant> CPU<M, V> {
     }
 
     fn load_x(&mut self, value: u8) {
-        CPU::<M, V>::set_u8_with_flags(
+        CPU::set_u8_with_flags(
             &mut self.registers.x,
             &mut self.registers.status,
             value,
@@ -252,7 +266,7 @@ impl<M: Bus, V: Variant> CPU<M, V> {
     }
 
     fn load_y(&mut self, value: u8) {
-        CPU::<M, V>::set_u8_with_flags(
+        CPU::set_u8_with_flags(
             &mut self.registers.y,
             &mut self.registers.status,
             value,
@@ -265,6 +279,12 @@ impl<M: Bus, V: Variant> CPU<M, V> {
 
     fn branch_if_equal(&mut self, addr: u16) {
         if self.registers.status.contains(Status::PS_ZERO) {
+            self.registers.pc = addr;
+        }
+    }
+
+    fn branch_if_not_equal(&mut self, addr: u16) {
+        if !self.registers.status.contains(Status::PS_ZERO) {
             self.registers.pc = addr;
         }
     }
@@ -359,13 +379,13 @@ impl<M: Bus, V: Variant> CPU<M, V> {
 
     fn push_on_stack(&mut self, val: u8) {
         let addr = self.registers.stkp.to_u16();
-        self.memory.set_byte(addr, val);
+        self.set_byte(addr, val);
         self.registers.stkp.decrement();
     }
 
     fn pull_from_stack(&mut self) -> u8 {
         let addr = self.registers.stkp.to_u16();
-        let out = self.memory.get_byte(addr);
+        let out = self.get_byte(addr);
         self.registers.stkp.increment();
         out
     }
@@ -378,5 +398,30 @@ impl<M: Bus, V: Variant> CPU<M, V> {
     fn inclusive_or(&mut self, val: u8) {
         let a_after = self.registers.a | val;
         self.load_a(a_after);
+    }
+
+    fn compare(&mut self, r: u8, val: u8) {
+        if r >= val {
+            self.registers.status.insert(Status::PS_CARRY);
+        } else {
+            self.registers.status.remove(Status::PS_CARRY);
+        }
+
+        if r == val {
+            self.registers.status.insert(Status::PS_ZERO);
+        } else {
+            self.registers.status.remove(Status::PS_ZERO);
+        }
+
+        let diff = r.wrapping_sub(val);
+        if Self::value_is_negative(diff) {
+            self.registers.status.insert(Status::PS_NEGATIVE);
+        } else {
+            self.registers.status.remove(Status::PS_NEGATIVE);
+        }
+    }
+
+    fn compare_with_a_register(&mut self, val: u8) {
+        self.compare(self.registers.a, val);
     }
 }

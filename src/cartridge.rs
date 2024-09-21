@@ -45,7 +45,6 @@ impl Cartridge {
             unused: [0; 5],
         };
 
-        // 78, 69, 83, 26
         let mut cart = Cartridge {
             b_image_valid: false,
             v_prg_memory: vec![],
@@ -76,5 +75,24 @@ impl Cartridge {
         cart.b_image_valid = true;
 
         cart
+    }
+
+    pub fn cpu_read(&self, addr: u16) -> (bool, u8) {
+        match self.mapper.cpu_map_read(addr) {
+            (true, mapped_addr) => {
+                return (true, self.v_prg_memory[mapped_addr as usize]);
+            }
+            _ => (false, 0)
+        }
+    }
+
+    pub fn cpu_write(&mut self, addr: u16, data: u8) -> bool {
+        match self.mapper.cpu_map_write(addr) {
+            (true, mapped_addr) => {
+                self.v_prg_memory[mapped_addr as usize] = data;
+                true
+            }
+            _ => false
+        }
     }
 }

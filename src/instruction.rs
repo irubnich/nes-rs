@@ -4,9 +4,9 @@ pub enum Instruction {
     ORA, LDX, LDY,
     LDA, STX, STY,
     SEC, EOR, ADC,
-    SBC, NOP,
-    BEQ,
-    BMI
+    SBC, NOP, PHA,
+    BEQ, BMI, JSR,
+    CMP, BNE,
 }
 
 #[derive(Debug)]
@@ -57,8 +57,8 @@ pub type DecodedInstr = (Instruction, OpInput);
 #[derive(Default)]
 pub struct Nmos6502;
 
-impl crate::Variant for Nmos6502 {
-    fn decode(opcode: u8) -> Option<(Instruction, AddressingMode)> {
+impl Nmos6502 {
+    pub fn decode(opcode: u8) -> Option<(Instruction, AddressingMode)> {
         match opcode {
             0x00 => Some((Instruction::BRK, AddressingMode::IMP)),
             0x01 => Some((Instruction::ORA, AddressingMode::IZX)),
@@ -67,9 +67,11 @@ impl crate::Variant for Nmos6502 {
             0x04 => None,
             0x05 => Some((Instruction::ORA, AddressingMode::ZP0)),
             0x07 => None,
+            0x20 => Some((Instruction::JSR, AddressingMode::ABS)),
             0x30 => Some((Instruction::BMI, AddressingMode::REL)),
             0x33 => None,
             0x38 => Some((Instruction::SEC, AddressingMode::IMP)),
+            0x48 => Some((Instruction::PHA, AddressingMode::IMP)),
             0x4C => Some((Instruction::JMP, AddressingMode::ABS)),
             0x61 => Some((Instruction::ADC, AddressingMode::IZX)),
             0x65 => Some((Instruction::ADC, AddressingMode::ZP0)),
@@ -88,6 +90,8 @@ impl crate::Variant for Nmos6502 {
             0xA5 => Some((Instruction::LDA, AddressingMode::ZP0)),
             0xA6 => Some((Instruction::LDX, AddressingMode::ZP0)),
             0xA9 => Some((Instruction::LDA, AddressingMode::IMM)),
+            0xC9 => Some((Instruction::CMP, AddressingMode::IMM)),
+            0xD0 => Some((Instruction::BNE, AddressingMode::REL)),
             0xE5 => Some((Instruction::SBC, AddressingMode::ZP0)),
             0xEA => Some((Instruction::NOP, AddressingMode::IMP)),
             0xF0 => Some((Instruction::BEQ, AddressingMode::REL)),
