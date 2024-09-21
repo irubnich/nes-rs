@@ -3,7 +3,7 @@ use crate::instruction::{DecodedInstr, Nmos6502, AddressingMode, OpInput, Instru
 use crate::bus::Bus;
 
 fn address_from_bytes(lo: u8, hi: u8) -> u16 {
-    u16::from(lo) + (u16::from(hi) << 8usize)
+    u16::from(hi) << 8 | u16::from(lo)
 }
 
 pub struct CPU {
@@ -36,9 +36,9 @@ impl CPU {
         self.registers.a = 0;
         self.registers.x = 0;
         self.registers.y = 0;
-        self.registers.stkp = StackPointer(0xFD);
+        self.registers.stkp = StackPointer(self.registers.stkp.0.wrapping_sub(3));
         self.registers.status = Status::empty();
-        self.registers.status.or(Status::PS_UNUSED);
+        self.registers.status.insert(Status::PS_DISABLE_INTERRUPTS);
     }
 
     fn read_address(&mut self, addr: u16) -> [u8; 2] {
@@ -205,6 +205,13 @@ impl CPU {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_not_equal(addr);
             }
+            (Instruction::RTS, OpInput::UseImplied) => {
+                self.pull_from_stack();
+                let pcl: u8 = self.pull_from_stack();
+                let pch: u8 = self.fetch_from_stack();
+                self.registers.pc = ((u16::from(pch) << 8) | u16::from(pcl)).wrapping_add(1);
+            }
+
             (Instruction::NOP, OpInput::UseImplied) => {
                 // noop
             }
@@ -388,6 +395,10 @@ impl CPU {
         let out = self.get_byte(addr);
         self.registers.stkp.increment();
         out
+    }
+
+    fn fetch_from_stack(&mut self) -> u8 {
+        self.get_byte(self.registers.stkp.to_u16())
     }
 
     fn xor(&mut self, val: u8) {

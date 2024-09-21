@@ -6,7 +6,7 @@ pub enum Instruction {
     SEC, EOR, ADC,
     SBC, NOP, PHA,
     BEQ, BMI, JSR,
-    CMP, BNE,
+    CMP, BNE, RTS,
 }
 
 #[derive(Debug)]
@@ -67,12 +67,14 @@ impl Nmos6502 {
             0x04 => None,
             0x05 => Some((Instruction::ORA, AddressingMode::ZP0)),
             0x07 => None,
+            0x13 => None,
             0x20 => Some((Instruction::JSR, AddressingMode::ABS)),
             0x30 => Some((Instruction::BMI, AddressingMode::REL)),
             0x33 => None,
             0x38 => Some((Instruction::SEC, AddressingMode::IMP)),
             0x48 => Some((Instruction::PHA, AddressingMode::IMP)),
             0x4C => Some((Instruction::JMP, AddressingMode::ABS)),
+            0x60 => Some((Instruction::RTS, AddressingMode::IMP)),
             0x61 => Some((Instruction::ADC, AddressingMode::IZX)),
             0x65 => Some((Instruction::ADC, AddressingMode::ZP0)),
             0x69 => Some((Instruction::ADC, AddressingMode::IMM)),

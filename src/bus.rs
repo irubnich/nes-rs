@@ -28,9 +28,9 @@ impl Bus {
     }
 
     pub fn cpu_read(&self, addr: u16) -> u8 {
-        let data = self.cartridge.cpu_read(addr);
-        if data.0 {
-            return data.1;
+        let (was_read, data) = self.cartridge.cpu_read(addr);
+        if was_read {
+            return data;
         } else if addr <= 0x1FFF {
             return self.cpu_ram[(addr & 0x07FF) as usize];
         }
