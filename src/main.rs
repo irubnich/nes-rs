@@ -18,7 +18,7 @@ fn main() {
     println!("Y: 0x{:X}", cpu.registers.y);
 
     println!("PC: 0x{:X}", cpu.registers.pc);
-    println!("SP: {:?}", cpu.registers.stkp);
+    println!("SP: {:X}", cpu.registers.stkp.0);
     println!("Status: {:?}", cpu.registers.status);
 
     //let r = iced::run("title", update, view);
