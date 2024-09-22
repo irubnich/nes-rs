@@ -436,6 +436,27 @@ impl CPU {
             (Instruction::LAX, OpInput::UseAddress(_addr)) => {
                 // unofficial
             }
+            (Instruction::AAX, OpInput::UseAddress(_addr)) => {
+                // unofficial
+            }
+            (Instruction::DCP, OpInput::UseAddress(_addr)) => {
+                // unofficial
+            }
+            (Instruction::ISC, OpInput::UseAddress(_addr)) => {
+                // unofficial
+            }
+            (Instruction::SLO, OpInput::UseAddress(_addr)) => {
+                // unofficial
+            }
+            (Instruction::RLA, OpInput::UseAddress(_addr)) => {
+                // unofficial
+            }
+            (Instruction::SRE, OpInput::UseAddress(_addr)) => {
+                // unofficial
+            }
+            (Instruction::RRA, OpInput::UseAddress(_addr)) => {
+                // unofficial
+            }
 
             (Instruction::NOP, OpInput::UseImplied) => {
                 // noop
