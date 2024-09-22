@@ -23,7 +23,7 @@ pub enum Instruction {
     // unofficial
     LAX, AAX, DCP,
     ISC, SLO, RLA,
-    SRE,
+    SRE, KIL, DOP,
 }
 
 #[derive(Debug)]
@@ -128,6 +128,7 @@ impl Nmos6502 {
             0x30 => Some((Instruction::BMI, AddressingMode::REL)),
             0x31 => Some((Instruction::AND, AddressingMode::IZY)),
             0x33 => Some((Instruction::RLA, AddressingMode::IZY)),
+            0x34 => Some((Instruction::DOP, AddressingMode::ZPX)),
             0x35 => Some((Instruction::AND, AddressingMode::ZPX)),
             0x36 => Some((Instruction::ROL, AddressingMode::ZPX)),
             0x37 => Some((Instruction::RLA, AddressingMode::ZPX)),
@@ -155,6 +156,7 @@ impl Nmos6502 {
             0x4F => Some((Instruction::SRE, AddressingMode::ABS)),
             0x50 => Some((Instruction::BVC, AddressingMode::REL)),
             0x51 => Some((Instruction::EOR, AddressingMode::IZY)),
+            0x52 => Some((Instruction::KIL, AddressingMode::IMP)),
             0x53 => Some((Instruction::SRE, AddressingMode::IZY)),
             0x55 => Some((Instruction::EOR, AddressingMode::ZPX)),
             0x56 => Some((Instruction::LSR, AddressingMode::ZPX)),

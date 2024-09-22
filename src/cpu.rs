@@ -51,6 +51,17 @@ impl CPU {
 
         println!("at PC: {:X}", self.registers.pc);
         println!("decoding opcode {:X}", x);
+
+        // if self.registers.pc == 0xFAEF {
+        //     println!("A: 0x{:X}", self.registers.a);
+        //     println!("X: 0x{:X}", self.registers.x);
+        //     println!("Y: 0x{:X}", self.registers.y);
+
+        //     println!("PC: 0x{:X}", self.registers.pc);
+        //     println!("SP: {:X}", self.registers.stkp.0);
+        //     println!("Status: {:b}", self.registers.status.bits());
+        // }
+
         match Nmos6502::decode(x) {
             Some((instr, am)) => {
                 let extra_bytes = am.extra_bytes();
@@ -455,6 +466,12 @@ impl CPU {
                 // unofficial
             }
             (Instruction::RRA, OpInput::UseAddress(_addr)) => {
+                // unofficial
+            }
+            (Instruction::KIL, OpInput::UseImplied) => {
+                // unofficial
+            }
+            (Instruction::DOP, OpInput::UseAddress(_addr)) => {
                 // unofficial
             }
 
