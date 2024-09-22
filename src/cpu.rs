@@ -433,6 +433,10 @@ impl CPU {
                 self.set_byte(addr, operand);
             }
 
+            (Instruction::LAX, OpInput::UseAddress(_addr)) => {
+                // unofficial
+            }
+
             (Instruction::NOP, OpInput::UseImplied) => {
                 // noop
             }
