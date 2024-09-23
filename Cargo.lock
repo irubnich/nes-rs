@@ -2120,6 +2120,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "olc_pixel_game_engine"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8c69c2f104b26bdd2c06ec936d0e8c9fa0b382852909a938f39081422c30e40"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2564,6 +2573,7 @@ dependencies = [
  "bitflags 2.6.0",
  "iced",
  "nom",
+ "olc_pixel_game_engine",
 ]
 
 [[package]]
