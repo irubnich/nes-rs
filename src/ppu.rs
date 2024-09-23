@@ -1,4 +1,5 @@
-use olc_pixel_game_engine::{self as olc, Pixel};
+use olc_pixel_game_engine as olc;
+use rand::seq::SliceRandom;
 
 pub struct PPU {
     //tbl_name: [[u8; 1024]; 2],
@@ -7,13 +8,13 @@ pub struct PPU {
 
     pal_screen: Vec<olc::Pixel>,
 
-    spr_screen: olc::Sprite,
+    pub spr_screen: olc::Sprite,
     spr_name_table: [olc::Sprite; 2],
     spr_pattern_table: [olc::Sprite; 2],
 
-    frame_complete: bool,
-    scanline: i16,
-    cycle: i16,
+    pub frame_complete: bool,
+    scanline: i32,
+    cycle: i32,
 }
 
 impl PPU {
@@ -108,5 +109,20 @@ impl PPU {
         };
 
         ppu
+    }
+
+    pub fn clock(&mut self) {
+        let px = self.pal_screen.choose(&mut rand::thread_rng());
+        self.spr_screen.set_pixel(self.cycle - 1, self.scanline, *px.unwrap());
+
+        self.cycle += 1;
+        if self.cycle >= 341 {
+            self.cycle = 0;
+            self.scanline += 1;
+            if self.scanline >= 261 {
+                self.scanline -= 1;
+                self.frame_complete = true;
+            }
+        }
     }
 }

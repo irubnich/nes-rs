@@ -2574,6 +2574,7 @@ dependencies = [
  "iced",
  "nom",
  "olc_pixel_game_engine",
+ "rand",
 ]
 
 [[package]]

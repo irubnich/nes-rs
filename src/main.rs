@@ -8,8 +8,10 @@ use olc_pixel_game_engine as olc;
 
 struct Emulator {
     cpu: CPU,
+    ppu: PPU,
     emulation_run: bool,
     residual_time: f32,
+    system_clock_counter: i32,
 }
 
 impl Emulator {
@@ -39,11 +41,25 @@ impl Emulator {
         }
     }
 
+    pub fn clock(&mut self) {
+        self.ppu.clock();
+
+        if self.system_clock_counter % 3 == 0 {
+            self.cpu.single_step();
+        }
+
+        self.system_clock_counter += 1;
+    }
+
+    pub fn reset(&mut self) {
+        self.cpu.reset();
+        self.system_clock_counter = 0;
+    }
 }
 
 impl olc::Application for Emulator {
     fn on_user_create(&mut self) -> Result<(), olc::Error> {
-        self.cpu.reset();
+        self.reset();
         self.cpu.registers.pc = 0xC000;
 
         Ok(())
@@ -57,14 +73,20 @@ impl olc::Application for Emulator {
                 self.residual_time -= elapsed_time;
             } else {
                 self.residual_time += (1.0 / 60.0) - elapsed_time;
+                loop {
+                    self.clock();
+                    if !self.ppu.frame_complete {
+                        break;
+                    }
+                }
+                self.ppu.frame_complete = false;
             }
         } else {
-
         }
 
-        self.cpu.single_step();
 
         self.draw_cpu(516, 2);
+        olc::draw_sprite(0, 0, &self.ppu.spr_screen);
 
         Ok(())
     }
@@ -78,7 +100,6 @@ fn main() {
     let ppu = PPU::new();
     let cartridge = Cartridge::new(String::from("nestest.nes"));
     let bus = Bus {
-        ppu,
         cartridge,
         memory: Memory::new()
     };
@@ -89,8 +110,10 @@ fn main() {
 
     let mut emulator = Emulator {
         cpu,
-        emulation_run: false,
+        ppu,
+        emulation_run: true,
         residual_time: 0f32,
+        system_clock_counter: 0,
     };
     olc::start("nes", &mut emulator, 780, 480, 2, 2).unwrap();
 }

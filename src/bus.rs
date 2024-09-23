@@ -1,9 +1,7 @@
 use crate::cartridge::Cartridge;
 use crate::memory::Memory;
-use crate::ppu::PPU;
 
 pub struct Bus {
-    pub ppu: PPU,
     pub memory: Memory,
     pub cartridge: Cartridge,
 }
