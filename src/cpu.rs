@@ -1,6 +1,6 @@
+use crate::bus::Bus;
 use crate::registers::{Registers, StackPointer, Status, StatusArgs};
 use crate::instruction::{DecodedInstr, Nmos6502, AddressingMode, OpInput, Instruction};
-use crate::bus::Bus;
 
 fn address_from_bytes(lo: u8, hi: u8) -> u16 {
     u16::from(hi) << 8 | u16::from(lo)
@@ -8,17 +8,10 @@ fn address_from_bytes(lo: u8, hi: u8) -> u16 {
 
 pub struct CPU {
     pub registers: Registers,
-    bus: Bus,
+    pub bus: Bus,
 }
 
 impl CPU {
-    pub fn new(bus: Bus) -> CPU {
-        CPU {
-            registers: Registers::new(),
-            bus,
-        }
-    }
-
     fn get_byte(&mut self, address: u16) -> u8 {
         self.bus.cpu_read(address)
     }
@@ -48,9 +41,6 @@ impl CPU {
 
     pub fn fetch_next_and_decode(&mut self) -> Option<DecodedInstr> {
         let x: u8 = self.get_byte(self.registers.pc);
-
-        println!("at PC: {:X}", self.registers.pc);
-        println!("decoding opcode {:X}", x);
 
         // if self.registers.pc == 0xFAEF {
         //     println!("A: 0x{:X}", self.registers.a);
