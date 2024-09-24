@@ -560,6 +560,10 @@ impl CPU {
                 // unofficial
                 cycles
             }
+            (Instruction::DOP, OpInput::UseImmediate(_val), cycles, _) => {
+                // unofficial
+                cycles
+            }
 
             (Instruction::NOP, OpInput::UseImplied, cycles, _) => {
                 // noop
