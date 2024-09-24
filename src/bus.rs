@@ -3,10 +3,12 @@ use std::rc::Rc;
 
 use crate::cartridge::Cartridge;
 use crate::memory::Memory;
+use crate::ppu::PPU;
 
 pub struct Bus {
     pub memory: Memory,
     pub cartridge: Rc<RefCell<Cartridge>>,
+    pub ppu: Rc<RefCell<PPU>>,
 }
 
 impl Bus {
@@ -21,6 +23,8 @@ impl Bus {
             // done
         } else if addr <= 0x1FFF {
             self.memory.set_byte(addr & 0x07FF, data);
+        } else if addr >= 0x2000 && addr <= 0x3FFF {
+            self.ppu.borrow_mut().cpu_write(addr & 0x0007, data);
         }
     }
 
@@ -30,6 +34,8 @@ impl Bus {
             data
         } else if addr <= 0x1FFF {
             self.memory.get_byte(addr & 0x07FF)
+        } else if addr >= 0x2000 && addr <= 0x3FFF {
+            self.ppu.borrow_mut().cpu_read(addr & 0x0007)
         } else {
             0x00
         }

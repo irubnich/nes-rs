@@ -1,4 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
+use bitflags::bitflags;
 
 use olc_pixel_game_engine as olc;
 use rand::Rng;
@@ -7,20 +8,70 @@ use crate::cartridge::Cartridge;
 
 pub struct PPU {
     //tbl_name: [[u8; 1024]; 2],
-    //tbl_pattern: [[u8; 4096]; 2],
-    //tbl_palette: [u8; 32],
+    tbl_pattern: [[u8; 4096]; 2],
+    tbl_palette: [u8; 32],
 
     pal_screen: Vec<olc::Pixel>,
 
     pub spr_screen: olc::Sprite,
     _spr_name_table: [olc::Sprite; 2],
-    _spr_pattern_table: [olc::Sprite; 2],
+    spr_pattern_table: [olc::Sprite; 2],
 
     pub frame_complete: bool,
     scanline: i32,
     cycle: i32,
 
     cart: Rc<RefCell<Cartridge>>,
+
+    status: PPUStatus,
+    mask: PPUMask,
+    control: PPUControl,
+
+    address_latch: u8,
+    ppu_data_buffer: u8,
+    ppu_address: u16,
+}
+
+bitflags! {
+    #[derive(Copy, Clone, Debug)]
+    pub struct PPUStatus: u8 {
+        const PS_UNUSED1 = 0b0000_0001;
+        const PS_UNUSED2 = 0b0000_0010;
+        const PS_UNUSED3 = 0b0000_0100;
+        const PS_UNUSED4 = 0b0000_1000;
+        const PS_UNUSED5 = 0b0001_0000;
+        const PS_SPRITE_OVERFLOW = 0b0010_0000;
+        const PS_SPRITE_ZERO_HIT = 0b0100_0000;
+        const PS_VERTICAL_BLANK = 0b1000_0000;
+    }
+}
+
+bitflags! {
+    #[derive(Copy, Clone, Debug)]
+    pub struct PPUMask: u8 {
+        const PS_GRAYSCALE = 0b0000_0001;
+        const PS_RENDER_BACKGROUND_LEFT = 0b0000_0010;
+        const PS_RENDER_SPRITES_LEFT = 0b0000_0100;
+        const PS_RENDER_BACKGROUND = 0b0000_1000;
+        const PS_RENDER_SPRITES = 0b0001_0000;
+        const PS_ENHANCE_RED = 0b0010_0000;
+        const PS_ENHANCE_GREEN = 0b0100_0000;
+        const PS_ENHANCE_BLUE = 0b1000_0000;
+    }
+}
+
+bitflags! {
+    #[derive(Copy, Clone, Debug)]
+    pub struct PPUControl: u8 {
+        const PS_NAMETABLE_X = 0b0000_0001;
+        const PS_NAMETABLE_Y = 0b0000_0010;
+        const PS_INCREMENT_MODE = 0b0000_0100;
+        const PS_PATTERN_SPRITE = 0b0000_1000;
+        const PS_PATTERN_BACKGROUND = 0b0001_0000;
+        const PS_SPRITE_SIZE = 0b0010_0000;
+        const PS_SLAVE_MODE = 0b0100_0000;
+        const PS_ENABLE_NMI = 0b1000_0000;
+    }
 }
 
 impl PPU {
@@ -99,12 +150,15 @@ impl PPU {
         let ppu = PPU {
             pal_screen,
 
+            tbl_pattern: [[0; 4096]; 2],
+            tbl_palette: [0; 32],
+
             spr_screen: olc::Sprite::with_dims(256, 240),
             _spr_name_table: [
                 olc::Sprite::with_dims(256, 240),
                 olc::Sprite::with_dims(256, 240),
             ],
-            _spr_pattern_table: [
+            spr_pattern_table: [
                 olc::Sprite::with_dims(128, 128),
                 olc::Sprite::with_dims(128, 128),
             ],
@@ -112,18 +166,101 @@ impl PPU {
             frame_complete: false,
             scanline: 0,
             cycle: 0,
-            cart
+            cart,
+
+            status: PPUStatus::empty(),
+            mask: PPUMask::empty(),
+            control: PPUControl::empty(),
+            address_latch: 0,
+            ppu_data_buffer: 0,
+            ppu_address: 0,
         };
 
         ppu
     }
 
+    pub fn cpu_read(&mut self, addr: u16) -> u8 {
+        match addr {
+            0x0000 => 0x00,
+            0x0001 => 0x00,
+            0x0002 => {
+                // hack
+                self.status.set(PPUStatus::PS_VERTICAL_BLANK, true);
+
+                let out = (self.status.bits() & 0xE0) | (self.ppu_data_buffer & 0x1F);
+                self.status.set(PPUStatus::PS_VERTICAL_BLANK, false);
+                self.address_latch = 0;
+                out
+            },
+            0x0003 => 0x00,
+            0x0004 => 0x00,
+            0x0005 => 0x00,
+            0x0006 => 0x00,
+            0x0007 => {
+                let data = self.ppu_data_buffer;
+                self.ppu_data_buffer = self.ppu_read(self.ppu_address);
+
+                if self.ppu_address > 0x3F00 {
+                    return self.ppu_data_buffer;
+                }
+
+                data
+            },
+            _ => panic!("invalid CPU read from PPU")
+        }
+    }
+
+    pub fn cpu_write(&mut self, addr: u16, data: u8) {
+        match addr {
+            0x0000 => {
+                self.control = PPUControl::from_bits(data).unwrap();
+            },
+            0x0001 => {
+                self.mask = PPUMask::from_bits(data).unwrap();
+            },
+            0x0002 => (),
+            0x0003 => (),
+            0x0004 => (),
+            0x0005 => (),
+            0x0006 => {
+                if self.address_latch == 0 {
+                    self.ppu_address = (self.ppu_address & 0x00FF) | u16::from(data) << 8;
+                    self.address_latch = 1;
+                } else {
+                    self.ppu_address = (self.ppu_address & 0xFF00) | u16::from(data);
+                    self.address_latch = 0;
+                }
+            },
+            0x0007 => {
+                self.ppu_write(self.ppu_address, data);
+            },
+            _ => panic!("invalid CPU write from PPU")
+        }
+    }
+
     pub fn ppu_read(&self, addr: u16) -> u8 {
         let addr = addr & 0x3FFF;
 
-        match self.cart.borrow().ppu_read(addr) {
-            (true, data) => data,
-            _ => 0x00
+        if let (true, data) = self.cart.borrow().ppu_read(addr) {
+            return data;
+        } else if addr <= 0x1FFF {
+            let idx1 = (addr & 0x1000) >> 12;
+            let idx2 = addr & 0x0FFF;
+
+            return self.tbl_pattern[idx1 as usize][idx2 as usize];
+        } else if addr >= 0x2000 && addr <= 0x3EFF {
+            // TODO
+            return 0x00;
+        } else if addr >= 0x3F00 && addr <= 0x3FFF {
+            let mut addr = addr & 0x001F;
+            if addr == 0x0010 { addr = 0x0000 };
+            if addr == 0x0014 { addr = 0x0004 };
+            if addr == 0x0018 { addr = 0x0008 };
+            if addr == 0x001C { addr = 0x000C };
+
+            return self.tbl_palette[addr as usize];
+        } else {
+            panic!("bad PPU read")
         }
     }
 
@@ -132,7 +269,34 @@ impl PPU {
 
         if self.cart.borrow_mut().ppu_write(addr, data) {
             // done
+        } else if addr <= 0x1FFF {
+            let idx1 = (addr & 0x1000) >> 12;
+            let idx2 = addr & 0x0FFF;
+
+            self.tbl_pattern[idx1 as usize][idx2 as usize] = data;
+        } else if addr >= 0x2000 && addr <= 0x3EFF {
+
+        } else if addr >= 0x3F00 && addr <= 0x3FFF {
+            let mut addr = addr & 0x001F;
+            if addr == 0x0010 { addr = 0x0000 };
+            if addr == 0x0014 { addr = 0x0004 };
+            if addr == 0x0018 { addr = 0x0008 };
+            if addr == 0x001C { addr = 0x000C };
+
+            self.tbl_palette[addr as usize] = data;
+        } else {
+
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.address_latch = 0;
+        self.ppu_data_buffer = 0;
+        self.scanline = 0;
+        self.cycle = 0;
+        self.status = PPUStatus::empty();
+        self.mask = PPUMask::empty();
+        self.control = PPUControl::empty();
     }
 
     pub fn clock(&mut self) {
@@ -148,5 +312,41 @@ impl PPU {
                 self.frame_complete = true;
             }
         }
+    }
+
+    pub fn get_pattern_table(&self, i: u8) -> &olc::Sprite {
+        &self.spr_pattern_table[i as usize]
+    }
+
+    pub fn build_pattern_table(&mut self, i: u8, palette: u8) {
+        for tile_y in 0u16..16 {
+            for tile_x in 0u16..16 {
+                let offset = tile_y * 256 + tile_x * 16;
+
+                for row in 0..8 {
+                    let mut tile_lsb = self.ppu_read(u16::from(i) * 0x1000 + offset + row);
+                    let mut tile_msb = self.ppu_read(u16::from(i) * 0x1000 + offset + row + 8);
+
+                    for col in 0..8 {
+                        let pixel = (tile_lsb & 0x01) + (tile_msb & 0x01);
+
+                        tile_lsb >>= 1;
+                        tile_msb >>= 1;
+
+                        self.spr_pattern_table[i as usize].set_pixel(
+                            (tile_x * 8 + (7 - col)).into(),
+                            (tile_y * 8 + row).into(),
+                            self.get_color_from_palette_ram(palette, pixel)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn get_color_from_palette_ram(&self, palette: u8, pixel: u8) -> olc::Pixel {
+        let addr = self.ppu_read(0x3F00 + (u16::from(palette) << 2) + u16::from(pixel)) & 0x3F;
+
+        self.pal_screen[addr as usize]
     }
 }

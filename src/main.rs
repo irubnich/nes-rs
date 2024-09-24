@@ -11,10 +11,11 @@ use olc_pixel_game_engine as olc;
 
 struct Emulator {
     cpu: CPU,
-    ppu: PPU,
+    ppu: Rc<RefCell<PPU>>,
     emulation_run: bool,
     residual_time: f32,
     system_clock_counter: i32,
+    selected_palette: u8,
 }
 
 impl Emulator {
@@ -30,11 +31,10 @@ impl Emulator {
         olc::draw_string(x + 178, y, "C", self.get_color(Status::PS_CARRY)).unwrap();
 
         olc::draw_string(x, y + 10, format!("PC: ${:04X}", self.cpu.registers.pc).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 20, format!("A:  ${:04X}", self.cpu.registers.a).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 30, format!("X:  ${:04X}", self.cpu.registers.x).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 40, format!("Y:  ${:04X}", self.cpu.registers.y).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 50, format!("SP: ${:04X}", self.cpu.registers.stkp.0).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 60, format!("CY: {}", self.cpu.clock_count).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 20, format!("A:  ${:02X}", self.cpu.registers.a).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 30, format!("X:  ${:02X}", self.cpu.registers.x).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 40, format!("Y:  ${:02X}", self.cpu.registers.y).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 50, format!("SP: ${:02X}", self.cpu.registers.stkp.0).as_str(), olc::WHITE).unwrap();
     }
 
     fn draw_ram(&mut self, x: i32, y: i32, addr: &mut u16, rows: i32, cols: i32) {
@@ -60,7 +60,7 @@ impl Emulator {
     }
 
     pub fn clock(&mut self) {
-        self.ppu.clock();
+        self.ppu.borrow_mut().clock();
 
         if self.system_clock_counter % 3 == 0 {
             self.cpu.clock();
@@ -71,6 +71,7 @@ impl Emulator {
 
     pub fn reset(&mut self) {
         self.cpu.reset();
+        self.ppu.borrow_mut().reset();
         self.system_clock_counter = 0;
     }
 }
@@ -78,13 +79,13 @@ impl Emulator {
 impl olc::Application for Emulator {
     fn on_user_create(&mut self) -> Result<(), olc::Error> {
         self.reset();
-        self.cpu.registers.pc = 0xC000;
+        //self.cpu.registers.pc = 0xC000;
 
         Ok(())
     }
 
     fn on_user_update(&mut self, elapsed_time: f32) -> Result<(), olc::Error> {
-        olc::clear(olc::BLUE);
+        olc::clear(olc::DARK_BLUE);
 
         if self.emulation_run {
             if self.residual_time > 0.0 {
@@ -93,11 +94,11 @@ impl olc::Application for Emulator {
                 self.residual_time += (1.0 / 60.0) - elapsed_time;
                 loop {
                     self.clock();
-                    if self.ppu.frame_complete {
+                    if self.ppu.borrow().frame_complete {
                         break;
                     }
                 }
-                self.ppu.frame_complete = false;
+                self.ppu.borrow_mut().frame_complete = false;
             }
         } else {
             if olc::get_key(olc::Key::C).pressed {
@@ -117,7 +118,7 @@ impl olc::Application for Emulator {
             if olc::get_key(olc::Key::F).pressed {
                 loop {
                     self.clock();
-                    if self.ppu.frame_complete {
+                    if self.ppu.borrow().frame_complete {
                         break;
                     }
                 }
@@ -129,17 +130,36 @@ impl olc::Application for Emulator {
                     }
                 }
 
-                self.ppu.frame_complete = false;
+                self.ppu.borrow_mut().frame_complete = false;
             }
         }
 
         if olc::get_key(olc::Key::SPACE).pressed { self.emulation_run = !self.emulation_run }
         if olc::get_key(olc::Key::R).pressed { self.reset(); }
+        if olc::get_key(olc::Key::P).pressed {
+            self.selected_palette += 1;
+            self.selected_palette &= 0x07;
+        }
 
         self.draw_cpu(516, 2);
-        self.draw_ram(516, 100, &mut 0x0000, 16, 16);
-        self.draw_ram(516, 300, &mut 0x8000, 16, 16);
-        olc::draw_sprite_ext(0, 0, &self.ppu.spr_screen, 2, olc_pixel_game_engine::SpriteFlip::NONE);
+        //self.draw_ram(516, 100, &mut 0x0000, 16, 16);
+        //self.draw_ram(516, 300, &mut 0x8000, 16, 16);
+
+        let swatch_size = 6;
+        for p in 0..8 {
+            for s in 0..4 {
+                olc::fill_rect(516 + p * (swatch_size * 5) + s * swatch_size, 340, swatch_size, swatch_size, self.ppu.borrow().get_color_from_palette_ram(p.try_into().unwrap(), s.try_into().unwrap()));
+            }
+        }
+        olc::draw_rect(516 + i32::from(self.selected_palette) * (swatch_size * 5) - 1, 339, swatch_size * 4, swatch_size, olc::WHITE);
+
+        self.ppu.borrow_mut().build_pattern_table(0, self.selected_palette);
+        self.ppu.borrow_mut().build_pattern_table(1, self.selected_palette);
+
+        olc::draw_sprite(516, 348, self.ppu.borrow().get_pattern_table(0));
+        olc::draw_sprite(648, 348, self.ppu.borrow().get_pattern_table(1));
+
+        olc::draw_sprite_ext(0, 0, &self.ppu.borrow().spr_screen, 2, olc_pixel_game_engine::SpriteFlip::NONE);
 
         Ok(())
     }
@@ -150,13 +170,14 @@ impl olc::Application for Emulator {
 }
 
 fn main() {
-    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("nestest.nes"))));
-    let c_clone = cartridge.clone();
+    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("nestest2.nes"))));
 
-    let ppu = PPU::new(cartridge);
+    let ppu = Rc::new(RefCell::new(PPU::new(cartridge.clone())));
+
     let bus = Bus {
-        cartridge: c_clone,
-        memory: Memory::new()
+        cartridge: cartridge.clone(),
+        memory: Memory::new(),
+        ppu: ppu.clone(),
     };
     let cpu = CPU {
         registers: Registers::new(),
@@ -167,10 +188,11 @@ fn main() {
 
     let mut emulator = Emulator {
         cpu,
-        ppu,
+        ppu: ppu.clone(),
         emulation_run: false,
         residual_time: 0f32,
         system_clock_counter: 0,
+        selected_palette: 0,
     };
     olc::start("nes", &mut emulator, 780, 480, 2, 2).unwrap();
 }
