@@ -24,11 +24,11 @@ impl Bus {
     pub fn cpu_read(&mut self, addr: u16) -> u8 {
         let (was_read, data) = self.cartridge.cpu_read(addr);
         if was_read {
-            return data;
+            data
         } else if addr <= 0x1FFF {
-            return self.memory.get_byte(addr & 0x07FF);
+            self.memory.get_byte(addr & 0x07FF)
+        } else {
+            0x00
         }
-
-        return 0x00;
     }
 }

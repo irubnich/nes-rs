@@ -1,5 +1,5 @@
 use olc_pixel_game_engine as olc;
-use rand::seq::SliceRandom;
+use rand::Rng;
 
 pub struct PPU {
     //tbl_name: [[u8; 1024]; 2],
@@ -112,15 +112,15 @@ impl PPU {
     }
 
     pub fn clock(&mut self) {
-        let px = self.pal_screen.choose(&mut rand::thread_rng());
-        self.spr_screen.set_pixel(self.cycle - 1, self.scanline, *px.unwrap());
+        let p: u8 = rand::thread_rng().gen_range(0..=1);
+        self.spr_screen.set_pixel(self.cycle - 1, self.scanline, if p == 0 { self.pal_screen[0x3F] } else { self.pal_screen[0x30] });
 
         self.cycle += 1;
         if self.cycle >= 341 {
             self.cycle = 0;
             self.scanline += 1;
             if self.scanline >= 261 {
-                self.scanline -= 1;
+                self.scanline = -1;
                 self.frame_complete = true;
             }
         }

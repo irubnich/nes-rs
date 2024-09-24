@@ -9,7 +9,6 @@ use crate::mapper::Mapper;
 
 #[derive(Debug)]
 pub struct Cartridge {
-    b_image_valid: bool,
     v_prg_memory: Vec<u8>,
     v_chr_memory: Vec<u8>,
     mapper: Mapper,
@@ -45,7 +44,6 @@ impl Cartridge {
             v_prg_memory: prg.to_vec(),
             v_chr_memory: chr.to_vec(),
             mapper: Mapper::new(prg_banks, chr_banks),
-            b_image_valid: true,
         };
 
         Ok((i, cart))
@@ -64,6 +62,25 @@ impl Cartridge {
         match self.mapper.cpu_map_write(addr) {
             (true, mapped_addr) => {
                 self.v_prg_memory[mapped_addr as usize] = data;
+                true
+            }
+            _ => false
+        }
+    }
+
+    pub fn ppu_read(&self, addr: u16) -> (bool, u8) {
+        match self.mapper.ppu_map_read(addr) {
+            (true, mapped_addr) => {
+                return (true, self.v_chr_memory[mapped_addr as usize])
+            }
+            _ => (false, 0)
+        }
+    }
+
+    pub fn ppu_write(&mut self, addr: u16, data: u8) -> bool {
+        match self.mapper.ppu_map_write(addr) {
+            (true, mapped_addr) => {
+                self.v_chr_memory[mapped_addr as usize] = data;
                 true
             }
             _ => false

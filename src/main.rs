@@ -75,18 +75,29 @@ impl olc::Application for Emulator {
                 self.residual_time += (1.0 / 60.0) - elapsed_time;
                 loop {
                     self.clock();
-                    if !self.ppu.frame_complete {
+                    if self.ppu.frame_complete {
                         break;
                     }
                 }
                 self.ppu.frame_complete = false;
             }
         } else {
+            if olc::get_key(olc::Key::F).pressed {
+                loop {
+                    self.clock();
+                    if self.ppu.frame_complete {
+                        break;
+                    }
+                }
+                self.ppu.frame_complete = false;
+            }
         }
 
+        if olc::get_key(olc::Key::SPACE).pressed { self.emulation_run = !self.emulation_run }
+        if olc::get_key(olc::Key::R).pressed { self.reset(); }
 
         self.draw_cpu(516, 2);
-        olc::draw_sprite(0, 0, &self.ppu.spr_screen);
+        olc::draw_sprite_ext(0, 0, &self.ppu.spr_screen, 2, olc_pixel_game_engine::SpriteFlip::NONE);
 
         Ok(())
     }
@@ -111,7 +122,7 @@ fn main() {
     let mut emulator = Emulator {
         cpu,
         ppu,
-        emulation_run: true,
+        emulation_run: false,
         residual_time: 0f32,
         system_clock_counter: 0,
     };
