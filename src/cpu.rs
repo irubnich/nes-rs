@@ -315,9 +315,9 @@ impl CPU {
                 self.registers.status.set_with_mask(
                     Status::PS_ZERO | Status::PS_NEGATIVE | Status::PS_OVERFLOW,
                     Status::new(StatusArgs {
-                        Z: is_zero,
-                        N: is_negative,
-                        V: v,
+                        z: is_zero,
+                        n: is_negative,
+                        v: v,
                         ..StatusArgs::none()
                     })
                 );
@@ -349,8 +349,8 @@ impl CPU {
                 self.registers.status.set_with_mask(
                     Status::PS_ZERO | Status::PS_NEGATIVE,
                     Status::new(StatusArgs {
-                        Z: val == 0,
-                        N: self.registers.a > 127,
+                        z: val == 0,
+                        n: self.registers.a > 127,
                         ..StatusArgs::none()
                     })
                 );
@@ -600,8 +600,8 @@ impl CPU {
         status.set_with_mask(
             Status::PS_ZERO | Status::PS_NEGATIVE,
             Status::new(StatusArgs {
-                Z: is_zero,
-                N: is_negative,
+                z: is_zero,
+                n: is_negative,
                 ..StatusArgs::none()
             }),
         );
@@ -619,7 +619,7 @@ impl CPU {
         status.set_with_mask(
             Status::PS_CARRY,
             Status::new(StatusArgs {
-                C: is_bit_0_set,
+                c: is_bit_0_set,
                 ..StatusArgs::none()
             })
         );
@@ -634,7 +634,7 @@ impl CPU {
         status.set_with_mask(
             Status::PS_CARRY,
             Status::new(StatusArgs {
-                C: is_bit_7_set,
+                c: is_bit_7_set,
                 ..StatusArgs::none()
             })
         );
@@ -650,7 +650,7 @@ impl CPU {
         status.set_with_mask(
             Status::PS_CARRY,
             Status::new(StatusArgs {
-                C: is_bit_0_set,
+                c: is_bit_0_set,
                 ..StatusArgs::none()
             })
         );
@@ -666,7 +666,7 @@ impl CPU {
         status.set_with_mask(
             Status::PS_CARRY,
             Status::new(StatusArgs {
-                C: is_bit_7_set,
+                c: is_bit_7_set,
                 ..StatusArgs::none()
             })
         );
@@ -779,8 +779,8 @@ impl CPU {
         self.registers.status.set_with_mask(
             mask,
             Status::new(StatusArgs {
-                C: did_carry,
-                V: did_overflow,
+                c: did_carry,
+                v: did_overflow,
                 ..StatusArgs::none()
             }),
         );
@@ -822,8 +822,8 @@ impl CPU {
         self.registers.status.set_with_mask(
             mask,
             Status::new(StatusArgs {
-                C: did_carry,
-                V: did_overflow,
+                c: did_carry,
+                v: did_overflow,
                 ..StatusArgs::none()
             }),
         );
@@ -910,8 +910,8 @@ impl CPU {
         flags.set_with_mask(
             Status::PS_NEGATIVE | Status::PS_ZERO,
             Status::new(StatusArgs {
-                N: Self::value_is_negative(value_new),
-                Z: is_zero,
+                n: Self::value_is_negative(value_new),
+                z: is_zero,
                 ..StatusArgs::none()
             })
         );
@@ -927,8 +927,8 @@ impl CPU {
         flags.set_with_mask(
             Status::PS_NEGATIVE | Status::PS_ZERO,
             Status::new(StatusArgs {
-                N: is_negative,
-                Z: is_zero,
+                n: is_negative,
+                z: is_zero,
                 ..StatusArgs::none()
             })
         );

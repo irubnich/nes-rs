@@ -1,27 +1,27 @@
 use bitflags::bitflags;
 
 pub struct StatusArgs {
-    pub N: bool,
-    pub V: bool,
-    pub U: bool,
-    pub B: bool,
-    pub D: bool,
-    pub I: bool,
-    pub Z: bool,
-    pub C: bool,
+    pub n: bool,
+    pub v: bool,
+    pub u: bool,
+    pub b: bool,
+    pub d: bool,
+    pub i: bool,
+    pub z: bool,
+    pub c: bool,
 }
 
 impl StatusArgs {
     pub const fn none() -> StatusArgs {
         StatusArgs {
-            N: false,
-            V: false,
-            U: false,
-            B: false,
-            D: false,
-            I: false,
-            Z: false,
-            C: false,
+            n: false,
+            v: false,
+            u: false,
+            b: false,
+            d: false,
+            i: false,
+            z: false,
+            c: false,
         }
     }
 }
@@ -71,40 +71,40 @@ bitflags! {
 impl Status {
     pub fn new(
         StatusArgs {
-            N, V, U, B, D, I, Z, C,
+            n, v, u, b, d, i, z, c,
         }: StatusArgs,
     ) -> Status {
         let mut out = Status::empty();
 
-        if N {
+        if n {
             out |= Status::PS_NEGATIVE;
         }
 
-        if V {
+        if v {
             out |= Status::PS_OVERFLOW;
         }
 
-        if U {
+        if u {
             out |= Status::PS_UNUSED;
         }
 
-        if B {
+        if b {
             out |= Status::PS_BRK;
         }
 
-        if D {
+        if d {
             out |= Status::PS_DECIMAL_MODE;
         }
 
-        if I {
+        if i {
             out |= Status::PS_DISABLE_INTERRUPTS;
         }
 
-        if Z {
+        if z {
             out |= Status::PS_ZERO;
         }
 
-        if C {
+        if c {
             out |= Status::PS_CARRY;
         }
 
@@ -127,14 +127,14 @@ impl Status {
 impl Default for Status {
     fn default() -> Self {
         Status::new(StatusArgs {
-            N: false,
-            V: false,
-            U: true,
-            B: false,
-            D: false,
-            I: true,
-            Z: false,
-            C: false,
+            n: false,
+            v: false,
+            u: true,
+            b: false,
+            d: false,
+            i: true,
+            z: false,
+            c: false,
         })
     }
 }

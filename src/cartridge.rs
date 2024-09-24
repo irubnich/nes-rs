@@ -28,7 +28,7 @@ impl Cartridge {
         let (i, chr_banks) = u8::<&[u8], Error<&[u8]>>(i).expect("chr_banks");
         let (i, flags_6) = u8::<&[u8], Error<&[u8]>>(i).expect("flags_6");
         let (i, flags_7) = u8::<&[u8], Error<&[u8]>>(i).expect("flags_7");
-        let (i, size_prg_ram) = u8::<&[u8], Error<&[u8]>>(i).expect("size_prg_ram");
+        let (i, _size_prg_ram) = u8::<&[u8], Error<&[u8]>>(i).expect("size_prg_ram");
         let (i, _flags_9) = u8::<&[u8], Error<&[u8]>>(i).expect("_flags_9");
         let (i, _flags_10) = u8::<&[u8], Error<&[u8]>>(i).expect("_flags_11");
         let (i, _) = take::<usize, &[u8], Error<&[u8]>>(5usize)(i).expect("unused");

@@ -9,8 +9,8 @@ pub struct PPU {
     pal_screen: Vec<olc::Pixel>,
 
     pub spr_screen: olc::Sprite,
-    spr_name_table: [olc::Sprite; 2],
-    spr_pattern_table: [olc::Sprite; 2],
+    _spr_name_table: [olc::Sprite; 2],
+    _spr_pattern_table: [olc::Sprite; 2],
 
     pub frame_complete: bool,
     scanline: i32,
@@ -94,11 +94,11 @@ impl PPU {
             pal_screen,
 
             spr_screen: olc::Sprite::with_dims(256, 240),
-            spr_name_table: [
+            _spr_name_table: [
                 olc::Sprite::with_dims(256, 240),
                 olc::Sprite::with_dims(256, 240),
             ],
-            spr_pattern_table: [
+            _spr_pattern_table: [
                 olc::Sprite::with_dims(128, 128),
                 olc::Sprite::with_dims(128, 128),
             ],
