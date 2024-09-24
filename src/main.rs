@@ -117,6 +117,7 @@ fn main() {
     let cpu = CPU {
         registers: Registers::new(),
         bus,
+        cycles: 0,
     };
 
     let mut emulator = Emulator {

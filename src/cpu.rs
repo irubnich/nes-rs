@@ -9,6 +9,7 @@ fn address_from_bytes(lo: u8, hi: u8) -> u16 {
 pub struct CPU {
     pub registers: Registers,
     pub bus: Bus,
+    pub cycles: u8,
 }
 
 impl CPU {
@@ -53,7 +54,7 @@ impl CPU {
         // }
 
         match Nmos6502::decode(x) {
-            Some((instr, am)) => {
+            Some((instr, am, cycles)) => {
                 let extra_bytes = am.extra_bytes();
                 let num_bytes = extra_bytes + 1;
 
@@ -75,35 +76,62 @@ impl CPU {
                 let x = self.registers.x;
                 let y = self.registers.y;
 
-                let am_out = match am {
-                    AddressingMode::ACC => OpInput::UseImplied,
-                    AddressingMode::IMP => OpInput::UseImplied,
-                    AddressingMode::IMM => OpInput::UseImmediate(slice[0]),
-                    AddressingMode::ZP0 => OpInput::UseAddress(u16::from(slice[0])),
-                    AddressingMode::ZPX => OpInput::UseAddress(u16::from(slice[0].wrapping_add(x))),
-                    AddressingMode::ZPY => OpInput::UseAddress(u16::from(slice[0].wrapping_add(y))),
+                let (am_out, extra_cycle) = match am {
+                    AddressingMode::ACC => (OpInput::UseImplied, false),
+                    AddressingMode::IMP => (OpInput::UseImplied, false),
+                    AddressingMode::IMM => (OpInput::UseImmediate(slice[0]), false),
+                    AddressingMode::ZP0 => (OpInput::UseAddress(u16::from(slice[0])), false),
+                    AddressingMode::ZPX => (OpInput::UseAddress(u16::from(slice[0].wrapping_add(x))), false),
+                    AddressingMode::ZPY => (OpInput::UseAddress(u16::from(slice[0].wrapping_add(y))), false),
                     AddressingMode::REL => {
                         let offset = slice[0];
                         let sign_extend = if offset & 0x80 == 0x80 { 0xFFu8 } else { 0x0 };
                         let rel = u16::from_le_bytes([offset, sign_extend]);
-                        OpInput::UseRelative(rel)
+                        (OpInput::UseRelative(rel), false)
                     },
-                    AddressingMode::ABS => OpInput::UseAddress(address_from_bytes(slice[0], slice[1])),
-                    AddressingMode::ABX => OpInput::UseAddress(address_from_bytes(slice[0], slice[1]).wrapping_add(x.into())),
-                    AddressingMode::ABY => OpInput::UseAddress(address_from_bytes(slice[0], slice[1]).wrapping_add(y.into())),
+                    AddressingMode::ABS => (OpInput::UseAddress(address_from_bytes(slice[0], slice[1])), false),
+                    AddressingMode::ABX => {
+                        let x = slice[0];
+                        let addr = address_from_bytes(slice[0], slice[1]).wrapping_add(x.into());
+                        let ex = if (addr & 0xFF00) != ((slice[1] as u16) << 8).into() {
+                            true
+                        } else {
+                            false
+                        };
+
+                        (OpInput::UseAddress(addr), ex)
+                    }
+                    AddressingMode::ABY => {
+                        let addr = address_from_bytes(slice[0], slice[1]).wrapping_add(y.into());
+                        let ex = if (addr & 0xFF00) != ((slice[1] as u16) << 8).into() {
+                            true
+                        } else {
+                            false
+                        };
+
+                        (OpInput::UseAddress(addr), ex)
+                    }
                     AddressingMode::IND => {
                         let slice = self.read_address(address_from_bytes(slice[0], slice[1]));
-                        OpInput::UseAddress(address_from_bytes(slice[0], slice[1]))
+                        (OpInput::UseAddress(address_from_bytes(slice[0], slice[1])), false)
                     },
                     AddressingMode::IZX => {
                         let start = slice[0].wrapping_add(x);
                         let slice = self.read_address(u16::from(start));
-                        OpInput::UseAddress(address_from_bytes(slice[0], slice[1]))
+                        (OpInput::UseAddress(address_from_bytes(slice[0], slice[1])), false)
                     }
                     AddressingMode::IZY => {
                         let start = slice[0];
                         let slice = self.read_address(u16::from(start));
-                        OpInput::UseAddress(address_from_bytes(slice[0], slice[1]).wrapping_add(y.into()))
+
+                        let addr = address_from_bytes(slice[0], slice[1]).wrapping_add(y.into());
+                        let ex = if (addr & 0xFF00) != ((slice[1] as u16) << 8).into() {
+                            true
+                        } else {
+                            false
+                        };
+
+                        (OpInput::UseAddress(addr), ex)
                     },
                     AddressingMode::BuggyIndirect => {
                         let pointer = address_from_bytes(slice[0], slice[1]);
@@ -112,72 +140,71 @@ impl CPU {
                         let incremented_pointer = u16::from_le_bytes([low_byte_of_incremented_pointer, pointer.to_le_bytes()[1]]);
 
                         let high_byte_of_target = self.get_byte(incremented_pointer);
-                        OpInput::UseAddress(address_from_bytes(low_byte_of_target, high_byte_of_target))
+                        (OpInput::UseAddress(address_from_bytes(low_byte_of_target, high_byte_of_target)), false)
                     }
                 };
 
                 self.registers.pc = self.registers.pc.wrapping_add(num_bytes);
 
-                Some((instr, am_out))
+                Some((instr, am_out, extra_cycle))
             }
             _ => None,
         }
     }
 
-    pub fn execute_instruction(&mut self, decoded_instr: DecodedInstr) {
-        match decoded_instr {
+    pub fn execute_instruction(&mut self, decoded_instr: DecodedInstr) -> bool {
+        match (decoded_instr.0, decoded_instr.1) {
             (Instruction::LDA, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.load_a(val);
+                decoded_instr.2 && true
             },
             (Instruction::SEC, OpInput::UseImplied) => {
                 self.registers.status.or(Status::PS_CARRY);
+                false
             },
             (Instruction::SBC, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.subtract_with_carry(val);
+                decoded_instr.2 && true
             }
             (Instruction::BEQ, OpInput::UseRelative(rel)) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_equal(addr);
+                false
             },
             (Instruction::BMI, OpInput::UseRelative(rel)) => {
                 let addr = self.registers.pc.wrapping_add(rel);
-                self.branch_if_minus(addr)
+                self.branch_if_minus(addr);
+                false
             },
             (Instruction::STA, OpInput::UseAddress(addr)) => {
                 self.set_byte(addr, self.registers.a);
+                false
             },
             (Instruction::JMP, OpInput::UseAddress(addr)) => {
                 self.jump(addr);
+                false
             },
             (Instruction::LDX, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.load_x(val);
+                decoded_instr.2 && true
             },
             (Instruction::LDY, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.load_y(val);
+                decoded_instr.2 && true
             },
             (Instruction::STX, OpInput::UseAddress(addr)) => {
                 self.set_byte(addr, self.registers.x);
+                false
             },
             (Instruction::STY, OpInput::UseAddress(addr)) => {
                 self.set_byte(addr, self.registers.y);
+                false
             },
             (Instruction::BRK, OpInput::UseImplied) => {
-                // for b in self.registers.pc.wrapping_sub(1).to_be_bytes() {
-                //     self.push_on_stack(b);
-                // }
-                // self.push_on_stack(self.registers.status.bits());
-                // let pcl = self.get_byte(0xFFFE);
-                // let pch = self.get_byte(0xFFFF);
-                // self.jump((u16::from(pch) << 8) | u16::from(pcl));
-                // self.registers.status.or(Status::PS_DISABLE_INTERRUPTS);
-                // self.registers.pc += 1;
-                // self.registers.status.insert(Status::PS_DISABLE_INTERRUPTS);
-                // self.set_byte(0x0100 + self.registers.stkp.to_u16(), (self.registers.pc >> 8) & 0x00FF);
-
                 self.registers.pc += 1;
                 let hilo = self.registers.pc.to_be_bytes();
                 self.push_on_stack(hilo[0]);
@@ -185,82 +212,102 @@ impl CPU {
                 self.registers.status.insert(Status::PS_BRK);
                 self.push_on_stack(self.registers.status.bits());
                 self.registers.status.insert(Status::PS_DISABLE_INTERRUPTS);
-                self.registers.pc = u16::from_be_bytes([self.get_byte(0xFFFE), self.get_byte(0xFFFF)])
-
+                self.registers.pc = u16::from_be_bytes([self.get_byte(0xFFFE), self.get_byte(0xFFFF)]);
+                false
             },
             (Instruction::EOR, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.xor(val);
+                decoded_instr.2 && true
             }
             (Instruction::ORA, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.inclusive_or(val);
+                decoded_instr.2 && true
             }
             (Instruction::LDA, OpInput::UseImmediate(val)) => {
                 self.load_a(val);
+                decoded_instr.2 && true
             }
             (Instruction::ADC, OpInput::UseImmediate(val)) => {
                 self.add_with_carry(val);
+                decoded_instr.2 && true
             }
             (Instruction::ADC, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.add_with_carry(val);
+                decoded_instr.2 && true
             }
             (Instruction::LDX, OpInput::UseImmediate(val)) => {
                 self.load_x(val);
+                decoded_instr.2 && true
             }
             (Instruction::LDY, OpInput::UseImmediate(val)) => {
                 self.load_y(val);
+                decoded_instr.2 && true
             }
             (Instruction::PHA, OpInput::UseImplied) => {
                 self.push_on_stack(self.registers.a);
+                false
             }
             (Instruction::JSR, OpInput::UseAddress(addr)) => {
                 for b in self.registers.pc.wrapping_sub(1).to_be_bytes() {
                     self.push_on_stack(b);
                 }
                 self.jump(addr);
+                false
             }
             (Instruction::CMP, OpInput::UseImmediate(val)) => {
                 self.compare_with_a_register(val);
+                decoded_instr.2 && true
             }
             (Instruction::CMP, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.compare_with_a_register(val);
+                decoded_instr.2 && true
             }
             (Instruction::BNE, OpInput::UseRelative(rel)) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_not_equal(addr);
+                false
             }
             (Instruction::RTS, OpInput::UseImplied) => {
                 self.pull_from_stack();
                 let pcl: u8 = self.pull_from_stack();
                 let pch: u8 = self.fetch_from_stack();
                 self.registers.pc = ((u16::from(pch) << 8) | u16::from(pcl)).wrapping_add(1);
+                false
             }
             (Instruction::SEI, OpInput::UseImplied) => {
                 self.registers.status.or(Status::PS_DISABLE_INTERRUPTS);
+                false
             }
             (Instruction::CLD, OpInput::UseImplied) => {
                 self.registers.status.and(!Status::PS_DECIMAL_MODE);
+                false
             }
             (Instruction::TXS, OpInput::UseImplied) => {
                 self.registers.stkp = StackPointer(self.registers.x);
+                false
             }
             (Instruction::BPL, OpInput::UseRelative(rel)) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_positive(addr);
+                false
             }
             (Instruction::BCS, OpInput::UseRelative(rel)) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_carry_set(addr);
+                false
             }
             (Instruction::CLC, OpInput::UseImplied) => {
                 self.registers.status.and(!Status::PS_CARRY);
+                false
             }
             (Instruction::BCC, OpInput::UseRelative(rel)) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_carry_clear(addr);
+                false
             }
             (Instruction::BIT, OpInput::UseAddress(addr)) => {
                 let a = self.registers.a;
@@ -280,21 +327,26 @@ impl CPU {
                         ..StatusArgs::none()
                     })
                 );
+                false
             }
             (Instruction::BVS, OpInput::UseRelative(rel)) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_overflow_set(addr);
+                false
             }
             (Instruction::BVC, OpInput::UseRelative(rel)) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_overflow_clear(addr);
+                false
             }
             (Instruction::SED, OpInput::UseImplied) => {
                 self.registers.status.or(Status::PS_DECIMAL_MODE);
+                false
             }
             (Instruction::PHP, OpInput::UseImplied) => {
                 let val = self.registers.status.bits() | 0x30;
                 self.push_on_stack(val);
+                false
             }
             (Instruction::PLA, OpInput::UseImplied) => {
                 self.pull_from_stack();
@@ -308,68 +360,88 @@ impl CPU {
                         ..StatusArgs::none()
                     })
                 );
+                false
             }
             (Instruction::AND, OpInput::UseImmediate(val)) => {
                 self.and(val);
+                decoded_instr.2 && true
             }
             (Instruction::PLP, OpInput::UseImplied) => {
                 self.pull_from_stack();
                 let val = self.fetch_from_stack();
                 self.registers.status = Status::from_bits_truncate(val);
+                false
             }
             (Instruction::ORA, OpInput::UseImmediate(val)) => {
                 self.inclusive_or(val);
+                decoded_instr.2 && true
             }
             (Instruction::CLV, OpInput::UseImplied) => {
                 self.registers.status.and(!Status::PS_OVERFLOW);
+                false
             }
             (Instruction::EOR, OpInput::UseImmediate(val)) => {
                 self.exclusive_or(val);
+                decoded_instr.2 && true
             }
             (Instruction::CPY, OpInput::UseImmediate(val)) => {
                 self.compare_with_y_register(val);
+                false
             }
             (Instruction::CPY, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.compare_with_y_register(val);
+                false
             }
             (Instruction::CPX, OpInput::UseImmediate(val)) => {
                 self.compare_with_x_register(val);
+                false
             }
             (Instruction::CPX, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.compare_with_x_register(val);
+                false
             }
             (Instruction::SBC, OpInput::UseImmediate(val)) => {
                 self.subtract_with_carry(val);
+                decoded_instr.2 && true
             }
             (Instruction::INY, OpInput::UseImplied) => {
                 CPU::increment(&mut self.registers.y, &mut self.registers.status);
+                false
             }
             (Instruction::INX, OpInput::UseImplied) => {
                 CPU::increment(&mut self.registers.x, &mut self.registers.status);
+                false
             }
             (Instruction::DEY, OpInput::UseImplied) => {
                 CPU::decrement(&mut self.registers.y, &mut self.registers.status);
+                false
             }
             (Instruction::DEX, OpInput::UseImplied) => {
                 CPU::decrement(&mut self.registers.x, &mut self.registers.status);
+                false
             }
             (Instruction::TAY, OpInput::UseImplied) => {
                 self.load_y(self.registers.a);
+                false
             }
             (Instruction::TAX, OpInput::UseImplied) => {
                 self.load_x(self.registers.a);
+                false
             }
             (Instruction::TYA, OpInput::UseImplied) => {
                 self.load_a(self.registers.y);
+                false
             }
             (Instruction::TXA, OpInput::UseImplied) => {
                 self.load_a(self.registers.x);
+                false
             }
             (Instruction::TSX, OpInput::UseImplied) => {
                 let StackPointer(val) = self.registers.stkp;
                 self.load_x(val);
+                false
             }
             (Instruction::RTI, OpInput::UseImplied) => {
                 self.pull_from_stack();
@@ -378,101 +450,125 @@ impl CPU {
                 let pcl = self.pull_from_stack();
                 let pch = self.fetch_from_stack();
                 self.registers.pc = address_from_bytes(pcl, pch);
+                false
             }
             (Instruction::LSR, OpInput::UseImplied) => {
                 let mut val = self.registers.a;
                 CPU::shift_right_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
+                false
             }
             (Instruction::LSR, OpInput::UseAddress(addr)) => {
                 let mut operand = self.get_byte(addr);
                 CPU::shift_right_with_flags(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
+                false
             }
             (Instruction::ASL, OpInput::UseImplied) => {
                 let mut val = self.registers.a;
                 CPU::shift_left_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
+                false
             }
             (Instruction::ASL, OpInput::UseAddress(addr)) => {
                 let mut operand = self.get_byte(addr);
                 CPU::shift_left_with_flags(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
+                false
             }
             (Instruction::ROR, OpInput::UseImplied) => {
                 let mut val = self.registers.a;
                 CPU::rotate_right_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
+                false
             }
             (Instruction::ROR, OpInput::UseAddress(addr)) => {
                 let mut operand = self.get_byte(addr);
                 CPU::rotate_right_with_flags(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
+                false
             }
             (Instruction::ROL, OpInput::UseImplied) => {
                 let mut val = self.registers.a;
                 CPU::rotate_left_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
+                false
             }
             (Instruction::ROL, OpInput::UseAddress(addr)) => {
                 let mut operand = self.get_byte(addr);
                 CPU::rotate_left_with_flags(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
+                false
             }
             (Instruction::AND, OpInput::UseAddress(addr)) => {
                 let val = self.get_byte(addr);
                 self.and(val);
+                decoded_instr.2 && true
             }
             (Instruction::INC, OpInput::UseAddress(addr)) => {
                 let mut operand = self.get_byte(addr);
                 CPU::increment(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
+                false
             }
             (Instruction::DEC, OpInput::UseAddress(addr)) => {
                 let mut operand = self.get_byte(addr);
                 CPU::decrement(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
+                false
             }
 
             (Instruction::LAX, OpInput::UseAddress(_addr)) => {
                 // unofficial
+                false
             }
             (Instruction::AAX, OpInput::UseAddress(_addr)) => {
                 // unofficial
+                false
             }
             (Instruction::DCP, OpInput::UseAddress(_addr)) => {
                 // unofficial
+                false
             }
             (Instruction::ISC, OpInput::UseAddress(_addr)) => {
                 // unofficial
+                false
             }
             (Instruction::SLO, OpInput::UseAddress(_addr)) => {
                 // unofficial
+                false
             }
             (Instruction::RLA, OpInput::UseAddress(_addr)) => {
                 // unofficial
+                false
             }
             (Instruction::SRE, OpInput::UseAddress(_addr)) => {
                 // unofficial
+                false
             }
             (Instruction::RRA, OpInput::UseAddress(_addr)) => {
                 // unofficial
+                false
             }
             (Instruction::KIL, OpInput::UseImplied) => {
                 // unofficial
+                false
             }
             (Instruction::DOP, OpInput::UseAddress(_addr)) => {
                 // unofficial
+                false
             }
 
             (Instruction::NOP, OpInput::UseImplied) => {
                 // noop
+                false
             }
             (Instruction::NOP, OpInput::UseAddress(_addr)) => {
                 // noop
+                false
             }
             (_, _) => {
-                panic!("can't execute {:?}", decoded_instr);
+                panic!("can't execute {:?}", decoded_instr.0);
             },
         }
     }
