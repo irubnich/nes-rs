@@ -32,6 +32,8 @@ impl CPU {
         self.registers.stkp = StackPointer(self.registers.stkp.0.wrapping_sub(3));
         self.registers.status = Status::empty();
         self.registers.status.insert(Status::PS_DISABLE_INTERRUPTS);
+
+        self.cycles = 8;
     }
 
     fn read_address(&mut self, addr: u16) -> [u8; 2] {
