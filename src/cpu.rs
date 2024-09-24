@@ -576,11 +576,15 @@ impl CPU {
     pub fn clock(&mut self) {
         if self.cycles == 0 {
             let opcode = self.fetch_next_and_decode().unwrap();
+            self.cycles = opcode.2;
+            self.execute_instruction(opcode);
         }
 
-        if let Some(decoded_instr) = self.fetch_next_and_decode() {
-            self.execute_instruction(decoded_instr);
-        }
+        self.cycles -= 1;
+    }
+
+    pub fn complete(&self) -> bool {
+        self.cycles == 0
     }
 
     pub fn run(&mut self) {

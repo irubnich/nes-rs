@@ -45,7 +45,7 @@ impl Emulator {
         self.ppu.clock();
 
         if self.system_clock_counter % 3 == 0 {
-            self.cpu.single_step();
+            self.cpu.clock();
         }
 
         self.system_clock_counter += 1;
@@ -82,6 +82,20 @@ impl olc::Application for Emulator {
                 self.ppu.frame_complete = false;
             }
         } else {
+            if olc::get_key(olc::Key::C).pressed {
+                loop {
+                    self.clock();
+                    if self.cpu.complete() {
+                        break;
+                    }
+                }
+                loop {
+                    self.clock();
+                    if !self.cpu.complete() {
+                        break;
+                    }
+                }
+            }
             if olc::get_key(olc::Key::F).pressed {
                 loop {
                     self.clock();
@@ -89,6 +103,14 @@ impl olc::Application for Emulator {
                         break;
                     }
                 }
+
+                loop {
+                    self.clock();
+                    if self.cpu.complete() {
+                        break;
+                    }
+                }
+
                 self.ppu.frame_complete = false;
             }
         }
