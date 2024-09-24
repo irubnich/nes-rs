@@ -26,21 +26,21 @@ impl Emulator {
         olc::draw_string(x + 160, y, "Z", self.get_color(Status::PS_ZERO)).unwrap();
         olc::draw_string(x + 178, y, "C", self.get_color(Status::PS_CARRY)).unwrap();
 
-        olc::draw_string(x, y + 10, format!("PC: ${:4X}", self.cpu.registers.pc).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 20, format!("A: ${:4X}", self.cpu.registers.a).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 30, format!("X: ${:4X}", self.cpu.registers.x).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 40, format!("Y: ${:4X}", self.cpu.registers.y).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 50, format!("SP: ${:4X}", self.cpu.registers.stkp.0).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 60, format!("CYC: {}", self.cpu.clock_count).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 10, format!("PC: ${:04X}", self.cpu.registers.pc).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 20, format!("A:  ${:04X}", self.cpu.registers.a).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 30, format!("X:  ${:04X}", self.cpu.registers.x).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 40, format!("Y:  ${:04X}", self.cpu.registers.y).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 50, format!("SP: ${:04X}", self.cpu.registers.stkp.0).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 60, format!("CY: {}", self.cpu.clock_count).as_str(), olc::WHITE).unwrap();
     }
 
     fn draw_ram(&mut self, x: i32, y: i32, addr: &mut u16, rows: i32, cols: i32) {
         let ram_x = x;
         let mut ram_y = y;
         for _ in 0..rows {
-            let mut offset = format!("${:4X}:", addr);
+            let mut offset = format!("${:04X}:", addr);
             for _ in 0..cols {
-                offset = format!("{} {}", offset, self.cpu.get_byte(*addr));
+                offset = format!("{} {:02X}", offset, self.cpu.get_byte(*addr));
                 *addr = *addr + 1;
             }
             olc::draw_string(ram_x, ram_y, &offset, olc::WHITE).unwrap();
