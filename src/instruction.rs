@@ -73,7 +73,7 @@ impl AddressingMode {
     }
 }
 
-pub type DecodedInstr = (Instruction, OpInput, bool);
+pub type DecodedInstr = (Instruction, OpInput, u8, bool);
 
 #[derive(Default)]
 pub struct Nmos6502;

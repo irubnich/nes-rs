@@ -76,20 +76,20 @@ impl CPU {
                 let x = self.registers.x;
                 let y = self.registers.y;
 
-                let (am_out, extra_cycle) = match am {
-                    AddressingMode::ACC => (OpInput::UseImplied, false),
-                    AddressingMode::IMP => (OpInput::UseImplied, false),
-                    AddressingMode::IMM => (OpInput::UseImmediate(slice[0]), false),
-                    AddressingMode::ZP0 => (OpInput::UseAddress(u16::from(slice[0])), false),
-                    AddressingMode::ZPX => (OpInput::UseAddress(u16::from(slice[0].wrapping_add(x))), false),
-                    AddressingMode::ZPY => (OpInput::UseAddress(u16::from(slice[0].wrapping_add(y))), false),
+                let (am_out, cycles, extra_cycle) = match am {
+                    AddressingMode::ACC => (OpInput::UseImplied, cycles, false),
+                    AddressingMode::IMP => (OpInput::UseImplied, cycles, false),
+                    AddressingMode::IMM => (OpInput::UseImmediate(slice[0]), cycles, false),
+                    AddressingMode::ZP0 => (OpInput::UseAddress(u16::from(slice[0])), cycles, false),
+                    AddressingMode::ZPX => (OpInput::UseAddress(u16::from(slice[0].wrapping_add(x))), cycles, false),
+                    AddressingMode::ZPY => (OpInput::UseAddress(u16::from(slice[0].wrapping_add(y))), cycles, false),
                     AddressingMode::REL => {
                         let offset = slice[0];
                         let sign_extend = if offset & 0x80 == 0x80 { 0xFFu8 } else { 0x0 };
                         let rel = u16::from_le_bytes([offset, sign_extend]);
-                        (OpInput::UseRelative(rel), false)
+                        (OpInput::UseRelative(rel), cycles, false)
                     },
-                    AddressingMode::ABS => (OpInput::UseAddress(address_from_bytes(slice[0], slice[1])), false),
+                    AddressingMode::ABS => (OpInput::UseAddress(address_from_bytes(slice[0], slice[1])), cycles, false),
                     AddressingMode::ABX => {
                         let x = slice[0];
                         let addr = address_from_bytes(slice[0], slice[1]).wrapping_add(x.into());
@@ -99,7 +99,7 @@ impl CPU {
                             false
                         };
 
-                        (OpInput::UseAddress(addr), ex)
+                        (OpInput::UseAddress(addr), cycles, ex)
                     }
                     AddressingMode::ABY => {
                         let addr = address_from_bytes(slice[0], slice[1]).wrapping_add(y.into());
@@ -109,16 +109,16 @@ impl CPU {
                             false
                         };
 
-                        (OpInput::UseAddress(addr), ex)
+                        (OpInput::UseAddress(addr), cycles, ex)
                     }
                     AddressingMode::IND => {
                         let slice = self.read_address(address_from_bytes(slice[0], slice[1]));
-                        (OpInput::UseAddress(address_from_bytes(slice[0], slice[1])), false)
+                        (OpInput::UseAddress(address_from_bytes(slice[0], slice[1])), cycles, false)
                     },
                     AddressingMode::IZX => {
                         let start = slice[0].wrapping_add(x);
                         let slice = self.read_address(u16::from(start));
-                        (OpInput::UseAddress(address_from_bytes(slice[0], slice[1])), false)
+                        (OpInput::UseAddress(address_from_bytes(slice[0], slice[1])), cycles, false)
                     }
                     AddressingMode::IZY => {
                         let start = slice[0];
@@ -131,7 +131,7 @@ impl CPU {
                             false
                         };
 
-                        (OpInput::UseAddress(addr), ex)
+                        (OpInput::UseAddress(addr), cycles, ex)
                     },
                     AddressingMode::BuggyIndirect => {
                         let pointer = address_from_bytes(slice[0], slice[1]);
@@ -140,71 +140,71 @@ impl CPU {
                         let incremented_pointer = u16::from_le_bytes([low_byte_of_incremented_pointer, pointer.to_le_bytes()[1]]);
 
                         let high_byte_of_target = self.get_byte(incremented_pointer);
-                        (OpInput::UseAddress(address_from_bytes(low_byte_of_target, high_byte_of_target)), false)
+                        (OpInput::UseAddress(address_from_bytes(low_byte_of_target, high_byte_of_target)), cycles, false)
                     }
                 };
 
                 self.registers.pc = self.registers.pc.wrapping_add(num_bytes);
 
-                Some((instr, am_out, extra_cycle))
+                Some((instr, am_out, cycles, extra_cycle))
             }
             _ => None,
         }
     }
 
-    pub fn execute_instruction(&mut self, decoded_instr: DecodedInstr) -> bool {
-        match (decoded_instr.0, decoded_instr.1) {
-            (Instruction::LDA, OpInput::UseAddress(addr)) => {
+    pub fn execute_instruction(&mut self, decoded_instr: DecodedInstr) -> u8 {
+        match decoded_instr {
+            (Instruction::LDA, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.load_a(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             },
-            (Instruction::SEC, OpInput::UseImplied) => {
+            (Instruction::SEC, OpInput::UseImplied, cycles, _) => {
                 self.registers.status.or(Status::PS_CARRY);
-                false
+                cycles
             },
-            (Instruction::SBC, OpInput::UseAddress(addr)) => {
+            (Instruction::SBC, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.subtract_with_carry(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::BEQ, OpInput::UseRelative(rel)) => {
+            (Instruction::BEQ, OpInput::UseRelative(rel), cycles, extra_cycle) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_equal(addr);
-                false
+                cycles
             },
-            (Instruction::BMI, OpInput::UseRelative(rel)) => {
+            (Instruction::BMI, OpInput::UseRelative(rel), cycles, extra_cycle) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_minus(addr);
-                false
+                cycles
             },
-            (Instruction::STA, OpInput::UseAddress(addr)) => {
+            (Instruction::STA, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 self.set_byte(addr, self.registers.a);
-                false
+                cycles
             },
-            (Instruction::JMP, OpInput::UseAddress(addr)) => {
+            (Instruction::JMP, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 self.jump(addr);
-                false
+                cycles
             },
-            (Instruction::LDX, OpInput::UseAddress(addr)) => {
+            (Instruction::LDX, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.load_x(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             },
-            (Instruction::LDY, OpInput::UseAddress(addr)) => {
+            (Instruction::LDY, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.load_y(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             },
-            (Instruction::STX, OpInput::UseAddress(addr)) => {
+            (Instruction::STX, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 self.set_byte(addr, self.registers.x);
-                false
+                cycles
             },
-            (Instruction::STY, OpInput::UseAddress(addr)) => {
+            (Instruction::STY, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 self.set_byte(addr, self.registers.y);
-                false
+                cycles
             },
-            (Instruction::BRK, OpInput::UseImplied) => {
+            (Instruction::BRK, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.registers.pc += 1;
                 let hilo = self.registers.pc.to_be_bytes();
                 self.push_on_stack(hilo[0]);
@@ -213,103 +213,103 @@ impl CPU {
                 self.push_on_stack(self.registers.status.bits());
                 self.registers.status.insert(Status::PS_DISABLE_INTERRUPTS);
                 self.registers.pc = u16::from_be_bytes([self.get_byte(0xFFFE), self.get_byte(0xFFFF)]);
-                false
+                cycles
             },
-            (Instruction::EOR, OpInput::UseAddress(addr)) => {
+            (Instruction::EOR, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.xor(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::ORA, OpInput::UseAddress(addr)) => {
+            (Instruction::ORA, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.inclusive_or(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::LDA, OpInput::UseImmediate(val)) => {
+            (Instruction::LDA, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.load_a(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::ADC, OpInput::UseImmediate(val)) => {
+            (Instruction::ADC, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.add_with_carry(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::ADC, OpInput::UseAddress(addr)) => {
+            (Instruction::ADC, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.add_with_carry(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::LDX, OpInput::UseImmediate(val)) => {
+            (Instruction::LDX, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.load_x(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::LDY, OpInput::UseImmediate(val)) => {
+            (Instruction::LDY, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.load_y(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::PHA, OpInput::UseImplied) => {
+            (Instruction::PHA, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.push_on_stack(self.registers.a);
-                false
+                cycles
             }
-            (Instruction::JSR, OpInput::UseAddress(addr)) => {
+            (Instruction::JSR, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 for b in self.registers.pc.wrapping_sub(1).to_be_bytes() {
                     self.push_on_stack(b);
                 }
                 self.jump(addr);
-                false
+                cycles
             }
-            (Instruction::CMP, OpInput::UseImmediate(val)) => {
+            (Instruction::CMP, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.compare_with_a_register(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::CMP, OpInput::UseAddress(addr)) => {
+            (Instruction::CMP, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.compare_with_a_register(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::BNE, OpInput::UseRelative(rel)) => {
+            (Instruction::BNE, OpInput::UseRelative(rel), cycles, extra_cycle) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_not_equal(addr);
-                false
+                cycles
             }
-            (Instruction::RTS, OpInput::UseImplied) => {
+            (Instruction::RTS, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.pull_from_stack();
                 let pcl: u8 = self.pull_from_stack();
                 let pch: u8 = self.fetch_from_stack();
                 self.registers.pc = ((u16::from(pch) << 8) | u16::from(pcl)).wrapping_add(1);
-                false
+                cycles
             }
-            (Instruction::SEI, OpInput::UseImplied) => {
+            (Instruction::SEI, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.registers.status.or(Status::PS_DISABLE_INTERRUPTS);
-                false
+                cycles
             }
-            (Instruction::CLD, OpInput::UseImplied) => {
+            (Instruction::CLD, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.registers.status.and(!Status::PS_DECIMAL_MODE);
-                false
+                cycles
             }
-            (Instruction::TXS, OpInput::UseImplied) => {
+            (Instruction::TXS, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.registers.stkp = StackPointer(self.registers.x);
-                false
+                cycles
             }
-            (Instruction::BPL, OpInput::UseRelative(rel)) => {
+            (Instruction::BPL, OpInput::UseRelative(rel), cycles, extra_cycle) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_positive(addr);
-                false
+                cycles
             }
-            (Instruction::BCS, OpInput::UseRelative(rel)) => {
+            (Instruction::BCS, OpInput::UseRelative(rel), cycles, extra_cycle) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_carry_set(addr);
-                false
+                cycles
             }
-            (Instruction::CLC, OpInput::UseImplied) => {
+            (Instruction::CLC, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.registers.status.and(!Status::PS_CARRY);
-                false
+                cycles
             }
-            (Instruction::BCC, OpInput::UseRelative(rel)) => {
+            (Instruction::BCC, OpInput::UseRelative(rel), cycles, extra_cycle) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_carry_clear(addr);
-                false
+                cycles
             }
-            (Instruction::BIT, OpInput::UseAddress(addr)) => {
+            (Instruction::BIT, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let a = self.registers.a;
                 let m = self.get_byte(addr);
                 let res = a & m;
@@ -327,28 +327,28 @@ impl CPU {
                         ..StatusArgs::none()
                     })
                 );
-                false
+                cycles
             }
-            (Instruction::BVS, OpInput::UseRelative(rel)) => {
+            (Instruction::BVS, OpInput::UseRelative(rel), cycles, extra_cycle) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_overflow_set(addr);
-                false
+                cycles
             }
-            (Instruction::BVC, OpInput::UseRelative(rel)) => {
+            (Instruction::BVC, OpInput::UseRelative(rel), cycles, extra_cycle) => {
                 let addr = self.registers.pc.wrapping_add(rel);
                 self.branch_if_overflow_clear(addr);
-                false
+                cycles
             }
-            (Instruction::SED, OpInput::UseImplied) => {
+            (Instruction::SED, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.registers.status.or(Status::PS_DECIMAL_MODE);
-                false
+                cycles
             }
-            (Instruction::PHP, OpInput::UseImplied) => {
+            (Instruction::PHP, OpInput::UseImplied, cycles, extra_cycle) => {
                 let val = self.registers.status.bits() | 0x30;
                 self.push_on_stack(val);
-                false
+                cycles
             }
-            (Instruction::PLA, OpInput::UseImplied) => {
+            (Instruction::PLA, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.pull_from_stack();
                 let val = self.fetch_from_stack();
                 self.registers.a = val;
@@ -360,220 +360,224 @@ impl CPU {
                         ..StatusArgs::none()
                     })
                 );
-                false
+                cycles
             }
-            (Instruction::AND, OpInput::UseImmediate(val)) => {
+            (Instruction::AND, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.and(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::PLP, OpInput::UseImplied) => {
+            (Instruction::PLP, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.pull_from_stack();
                 let val = self.fetch_from_stack();
                 self.registers.status = Status::from_bits_truncate(val);
-                false
+                cycles
             }
-            (Instruction::ORA, OpInput::UseImmediate(val)) => {
+            (Instruction::ORA, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.inclusive_or(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::CLV, OpInput::UseImplied) => {
+            (Instruction::CLV, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.registers.status.and(!Status::PS_OVERFLOW);
-                false
+                cycles
             }
-            (Instruction::EOR, OpInput::UseImmediate(val)) => {
+            (Instruction::EOR, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.exclusive_or(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::CPY, OpInput::UseImmediate(val)) => {
+            (Instruction::CPY, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.compare_with_y_register(val);
-                false
+                cycles
             }
-            (Instruction::CPY, OpInput::UseAddress(addr)) => {
+            (Instruction::CPY, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.compare_with_y_register(val);
-                false
+                cycles
             }
-            (Instruction::CPX, OpInput::UseImmediate(val)) => {
+            (Instruction::CPX, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.compare_with_x_register(val);
-                false
+                cycles
             }
-            (Instruction::CPX, OpInput::UseAddress(addr)) => {
+            (Instruction::CPX, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.compare_with_x_register(val);
-                false
+                cycles
             }
-            (Instruction::SBC, OpInput::UseImmediate(val)) => {
+            (Instruction::SBC, OpInput::UseImmediate(val), cycles, extra_cycle) => {
                 self.subtract_with_carry(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::INY, OpInput::UseImplied) => {
+            (Instruction::INY, OpInput::UseImplied, cycles, extra_cycle) => {
                 CPU::increment(&mut self.registers.y, &mut self.registers.status);
-                false
+                cycles
             }
-            (Instruction::INX, OpInput::UseImplied) => {
+            (Instruction::INX, OpInput::UseImplied, cycles, extra_cycle) => {
                 CPU::increment(&mut self.registers.x, &mut self.registers.status);
-                false
+                cycles
             }
-            (Instruction::DEY, OpInput::UseImplied) => {
+            (Instruction::DEY, OpInput::UseImplied, cycles, extra_cycle) => {
                 CPU::decrement(&mut self.registers.y, &mut self.registers.status);
-                false
+                cycles
             }
-            (Instruction::DEX, OpInput::UseImplied) => {
+            (Instruction::DEX, OpInput::UseImplied, cycles, extra_cycle) => {
                 CPU::decrement(&mut self.registers.x, &mut self.registers.status);
-                false
+                cycles
             }
-            (Instruction::TAY, OpInput::UseImplied) => {
+            (Instruction::TAY, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.load_y(self.registers.a);
-                false
+                cycles
             }
-            (Instruction::TAX, OpInput::UseImplied) => {
+            (Instruction::TAX, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.load_x(self.registers.a);
-                false
+                cycles
             }
-            (Instruction::TYA, OpInput::UseImplied) => {
+            (Instruction::TYA, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.load_a(self.registers.y);
-                false
+                cycles
             }
-            (Instruction::TXA, OpInput::UseImplied) => {
+            (Instruction::TXA, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.load_a(self.registers.x);
-                false
+                cycles
             }
-            (Instruction::TSX, OpInput::UseImplied) => {
+            (Instruction::TSX, OpInput::UseImplied, cycles, extra_cycle) => {
                 let StackPointer(val) = self.registers.stkp;
                 self.load_x(val);
-                false
+                cycles
             }
-            (Instruction::RTI, OpInput::UseImplied) => {
+            (Instruction::RTI, OpInput::UseImplied, cycles, extra_cycle) => {
                 self.pull_from_stack();
                 let val = self.pull_from_stack();
                 self.registers.status = Status::from_bits_truncate(val);
                 let pcl = self.pull_from_stack();
                 let pch = self.fetch_from_stack();
                 self.registers.pc = address_from_bytes(pcl, pch);
-                false
+                cycles
             }
-            (Instruction::LSR, OpInput::UseImplied) => {
+            (Instruction::LSR, OpInput::UseImplied, cycles, extra_cycle) => {
                 let mut val = self.registers.a;
                 CPU::shift_right_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
-                false
+                cycles
             }
-            (Instruction::LSR, OpInput::UseAddress(addr)) => {
+            (Instruction::LSR, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let mut operand = self.get_byte(addr);
                 CPU::shift_right_with_flags(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
-                false
+                cycles
             }
-            (Instruction::ASL, OpInput::UseImplied) => {
+            (Instruction::ASL, OpInput::UseImplied, cycles, extra_cycle) => {
                 let mut val = self.registers.a;
                 CPU::shift_left_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
-                false
+                cycles
             }
-            (Instruction::ASL, OpInput::UseAddress(addr)) => {
+            (Instruction::ASL, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let mut operand = self.get_byte(addr);
                 CPU::shift_left_with_flags(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
-                false
+                cycles
             }
-            (Instruction::ROR, OpInput::UseImplied) => {
+            (Instruction::ROR, OpInput::UseImplied, cycles, extra_cycle) => {
                 let mut val = self.registers.a;
                 CPU::rotate_right_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
-                false
+                cycles
             }
-            (Instruction::ROR, OpInput::UseAddress(addr)) => {
+            (Instruction::ROR, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let mut operand = self.get_byte(addr);
                 CPU::rotate_right_with_flags(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
-                false
+                cycles
             }
-            (Instruction::ROL, OpInput::UseImplied) => {
+            (Instruction::ROL, OpInput::UseImplied, cycles, extra_cycle) => {
                 let mut val = self.registers.a;
                 CPU::rotate_left_with_flags(&mut val, &mut self.registers.status);
                 self.registers.a = val;
-                false
+                cycles
             }
-            (Instruction::ROL, OpInput::UseAddress(addr)) => {
+            (Instruction::ROL, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let mut operand = self.get_byte(addr);
                 CPU::rotate_left_with_flags(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
-                false
+                cycles
             }
-            (Instruction::AND, OpInput::UseAddress(addr)) => {
+            (Instruction::AND, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let val = self.get_byte(addr);
                 self.and(val);
-                decoded_instr.2 && true
+                cycles + if extra_cycle { 1 } else { 0 }
             }
-            (Instruction::INC, OpInput::UseAddress(addr)) => {
+            (Instruction::INC, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let mut operand = self.get_byte(addr);
                 CPU::increment(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
-                false
+                cycles
             }
-            (Instruction::DEC, OpInput::UseAddress(addr)) => {
+            (Instruction::DEC, OpInput::UseAddress(addr), cycles, extra_cycle) => {
                 let mut operand = self.get_byte(addr);
                 CPU::decrement(&mut operand, &mut self.registers.status);
                 self.set_byte(addr, operand);
-                false
+                cycles
             }
 
-            (Instruction::LAX, OpInput::UseAddress(_addr)) => {
+            (Instruction::LAX, OpInput::UseAddress(_addr), cycles, extra_cycle) => {
                 // unofficial
-                false
+                cycles
             }
-            (Instruction::AAX, OpInput::UseAddress(_addr)) => {
+            (Instruction::AAX, OpInput::UseAddress(_addr), cycles, extra_cycle) => {
                 // unofficial
-                false
+                cycles
             }
-            (Instruction::DCP, OpInput::UseAddress(_addr)) => {
+            (Instruction::DCP, OpInput::UseAddress(_addr), cycles, extra_cycle) => {
                 // unofficial
-                false
+                cycles
             }
-            (Instruction::ISC, OpInput::UseAddress(_addr)) => {
+            (Instruction::ISC, OpInput::UseAddress(_addr), cycles, extra_cycle) => {
                 // unofficial
-                false
+                cycles
             }
-            (Instruction::SLO, OpInput::UseAddress(_addr)) => {
+            (Instruction::SLO, OpInput::UseAddress(_addr), cycles, extra_cycle) => {
                 // unofficial
-                false
+                cycles
             }
-            (Instruction::RLA, OpInput::UseAddress(_addr)) => {
+            (Instruction::RLA, OpInput::UseAddress(_addr), cycles, extra_cycle) => {
                 // unofficial
-                false
+                cycles
             }
-            (Instruction::SRE, OpInput::UseAddress(_addr)) => {
+            (Instruction::SRE, OpInput::UseAddress(_addr), cycles, extra_cycle) => {
                 // unofficial
-                false
+                cycles
             }
-            (Instruction::RRA, OpInput::UseAddress(_addr)) => {
+            (Instruction::RRA, OpInput::UseAddress(_addr), cycles, extra_cycle) => {
                 // unofficial
-                false
+                cycles
             }
-            (Instruction::KIL, OpInput::UseImplied) => {
+            (Instruction::KIL, OpInput::UseImplied, cycles, extra_cycle) => {
                 // unofficial
-                false
+                cycles
             }
-            (Instruction::DOP, OpInput::UseAddress(_addr)) => {
+            (Instruction::DOP, OpInput::UseAddress(_addr), cycles, extra_cycle) => {
                 // unofficial
-                false
+                cycles
             }
 
-            (Instruction::NOP, OpInput::UseImplied) => {
+            (Instruction::NOP, OpInput::UseImplied, cycles, extra_cycle) => {
                 // noop
-                false
+                cycles
             }
-            (Instruction::NOP, OpInput::UseAddress(_addr)) => {
+            (Instruction::NOP, OpInput::UseAddress(_addr), cycles, extra_cycle) => {
                 // noop
-                false
+                cycles
             }
-            (_, _) => {
+            (_, _, _, _) => {
                 panic!("can't execute {:?}", decoded_instr.0);
             },
         }
     }
 
-    pub fn single_step(&mut self) {
+    pub fn clock(&mut self) {
+        if self.cycles == 0 {
+            let opcode = self.fetch_next_and_decode().unwrap();
+        }
+
         if let Some(decoded_instr) = self.fetch_next_and_decode() {
             self.execute_instruction(decoded_instr);
         }
