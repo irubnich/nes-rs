@@ -34,6 +34,20 @@ impl Emulator {
         olc::draw_string(x, y + 60, format!("CYC: {}", self.cpu.clock_count).as_str(), olc::WHITE).unwrap();
     }
 
+    fn draw_ram(&mut self, x: i32, y: i32, addr: &mut u16, rows: i32, cols: i32) {
+        let ram_x = x;
+        let mut ram_y = y;
+        for _ in 0..rows {
+            let mut offset = format!("${:4X}:", addr);
+            for _ in 0..cols {
+                offset = format!("{} {}", offset, self.cpu.get_byte(*addr));
+                *addr = *addr + 1;
+            }
+            olc::draw_string(ram_x, ram_y, &offset, olc::WHITE).unwrap();
+            ram_y += 10;
+        }
+    }
+
     pub fn get_color(&self, s: Status) -> olc::Pixel {
         if self.cpu.registers.status.contains(s) {
             olc::GREEN
@@ -120,6 +134,8 @@ impl olc::Application for Emulator {
         if olc::get_key(olc::Key::R).pressed { self.reset(); }
 
         self.draw_cpu(516, 2);
+        self.draw_ram(516, 100, &mut 0x0000, 16, 16);
+        self.draw_ram(516, 300, &mut 0x8000, 16, 16);
         olc::draw_sprite_ext(0, 0, &self.ppu.spr_screen, 2, olc_pixel_game_engine::SpriteFlip::NONE);
 
         Ok(())

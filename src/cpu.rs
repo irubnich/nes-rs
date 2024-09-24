@@ -14,11 +14,11 @@ pub struct CPU {
 }
 
 impl CPU {
-    fn get_byte(&mut self, address: u16) -> u8 {
+    pub fn get_byte(&mut self, address: u16) -> u8 {
         self.bus.cpu_read(address)
     }
 
-    fn set_byte(&mut self, address: u16, value: u8) {
+    pub fn set_byte(&mut self, address: u16, value: u8) {
         self.bus.cpu_write(address, value);
     }
 
