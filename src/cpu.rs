@@ -10,7 +10,7 @@ pub struct CPU {
     pub registers: Registers,
     pub bus: Bus,
     pub cycles: u8,
-    pub total_cycles: u32,
+    pub clock_count: u32,
 }
 
 impl CPU {
@@ -35,7 +35,7 @@ impl CPU {
         self.registers.status.insert(Status::PS_DISABLE_INTERRUPTS);
 
         self.cycles = 8;
-        self.total_cycles = 0;
+        self.clock_count = 0;
     }
 
     fn read_address(&mut self, addr: u16) -> [u8; 2] {
@@ -574,7 +574,7 @@ impl CPU {
             self.execute_instruction(opcode);
         }
 
-        self.total_cycles += 1;
+        self.clock_count += 1;
         self.cycles -= 1;
     }
 

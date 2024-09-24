@@ -31,7 +31,7 @@ impl Emulator {
         olc::draw_string(x, y + 30, format!("X: ${:4X}", self.cpu.registers.x).as_str(), olc::WHITE).unwrap();
         olc::draw_string(x, y + 40, format!("Y: ${:4X}", self.cpu.registers.y).as_str(), olc::WHITE).unwrap();
         olc::draw_string(x, y + 50, format!("SP: ${:4X}", self.cpu.registers.stkp.0).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 60, format!("CYC: {}", self.cpu.total_cycles).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 60, format!("CYC: {}", self.cpu.clock_count).as_str(), olc::WHITE).unwrap();
     }
 
     pub fn get_color(&self, s: Status) -> olc::Pixel {
@@ -141,7 +141,7 @@ fn main() {
         registers: Registers::new(),
         bus,
         cycles: 0,
-        total_cycles: 0,
+        clock_count: 0,
     };
 
     let mut emulator = Emulator {
