@@ -1,9 +1,12 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::cartridge::Cartridge;
 use crate::memory::Memory;
 
 pub struct Bus {
     pub memory: Memory,
-    pub cartridge: Cartridge,
+    pub cartridge: Rc<RefCell<Cartridge>>,
 }
 
 impl Bus {
@@ -14,7 +17,7 @@ impl Bus {
     // }
 
     pub fn cpu_write(&mut self, addr: u16, data: u8) {
-        if self.cartridge.cpu_write(addr, data) {
+        if self.cartridge.borrow_mut().cpu_write(addr, data) {
             // done
         } else if addr <= 0x1FFF {
             self.memory.set_byte(addr & 0x07FF, data);
@@ -22,7 +25,7 @@ impl Bus {
     }
 
     pub fn cpu_read(&mut self, addr: u16) -> u8 {
-        let (was_read, data) = self.cartridge.cpu_read(addr);
+        let (was_read, data) = self.cartridge.borrow().cpu_read(addr);
         if was_read {
             data
         } else if addr <= 0x1FFF {

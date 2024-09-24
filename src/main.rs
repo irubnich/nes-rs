@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use rs6502::bus::Bus;
 use rs6502::cartridge::Cartridge;
 use rs6502::cpu::CPU;
@@ -147,10 +150,12 @@ impl olc::Application for Emulator {
 }
 
 fn main() {
-    let ppu = PPU::new();
-    let cartridge = Cartridge::new(String::from("nestest.nes"));
+    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("nestest.nes"))));
+    let c_clone = cartridge.clone();
+
+    let ppu = PPU::new(cartridge);
     let bus = Bus {
-        cartridge,
+        cartridge: c_clone,
         memory: Memory::new()
     };
     let cpu = CPU {

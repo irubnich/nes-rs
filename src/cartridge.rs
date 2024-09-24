@@ -7,7 +7,7 @@ use nom::error::Error;
 
 use crate::mapper::Mapper;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Cartridge {
     v_prg_memory: Vec<u8>,
     v_chr_memory: Vec<u8>,

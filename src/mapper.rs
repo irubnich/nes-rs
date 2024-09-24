@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Mapper {
     prg_banks: u8,
     chr_banks: u8,

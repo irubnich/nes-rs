@@ -1,5 +1,9 @@
+use std::{cell::RefCell, rc::Rc};
+
 use olc_pixel_game_engine as olc;
 use rand::Rng;
+
+use crate::cartridge::Cartridge;
 
 pub struct PPU {
     //tbl_name: [[u8; 1024]; 2],
@@ -15,10 +19,12 @@ pub struct PPU {
     pub frame_complete: bool,
     scanline: i32,
     cycle: i32,
+
+    cart: Rc<RefCell<Cartridge>>,
 }
 
 impl PPU {
-    pub fn new() -> PPU {
+    pub fn new(cart: Rc<RefCell<Cartridge>>) -> PPU {
         let mut pal_screen = Vec::new();
         pal_screen.resize(0x40, olc::Pixel::rgb(0, 0, 0));
 
@@ -106,9 +112,27 @@ impl PPU {
             frame_complete: false,
             scanline: 0,
             cycle: 0,
+            cart
         };
 
         ppu
+    }
+
+    pub fn ppu_read(&self, addr: u16) -> u8 {
+        let addr = addr & 0x3FFF;
+
+        match self.cart.borrow().ppu_read(addr) {
+            (true, data) => data,
+            _ => 0x00
+        }
+    }
+
+    pub fn ppu_write(&mut self, addr: u16, data: u8) {
+        let addr = addr & 0x3FFF;
+
+        if self.cart.borrow_mut().ppu_write(addr, data) {
+            // done
+        }
     }
 
     pub fn clock(&mut self) {

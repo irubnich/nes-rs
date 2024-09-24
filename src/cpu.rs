@@ -512,6 +512,10 @@ impl CPU {
                 cycles
             }
 
+            //
+            // unofficial instructions
+            //
+
             (Instruction::LAX, OpInput::UseAddress(_addr), cycles, _) => {
                 // unofficial
                 cycles
@@ -565,12 +569,11 @@ impl CPU {
                 cycles
             }
 
-            (Instruction::NOP, OpInput::UseImplied, cycles, _) => {
-                // noop
-                cycles
-            }
-            (Instruction::NOP, OpInput::UseAddress(_addr), cycles, _) => {
-                // noop
+            //
+            // nop and errors
+            //
+
+            (Instruction::NOP, _, cycles, _) => {
                 cycles
             }
             (_, _, _, _) => {
