@@ -33,11 +33,11 @@ impl Cartridge {
         let (i, _flags_10) = u8::<&[u8], Error<&[u8]>>(i).expect("_flags_11");
         let (i, _) = take::<usize, &[u8], Error<&[u8]>>(5usize)(i).expect("unused");
         let (i, prg) = take::<usize, &[u8], Error<&[u8]>>(0x4000 * prg_banks as usize)(i).expect("prg");
-        let (i, chr) = take::<usize, &[u8], Error<&[u8]>>(0x2000 * prg_banks as usize)(i).expect("chr");
+        let (i, chr) = take::<usize, &[u8], Error<&[u8]>>(0x2000 * chr_banks as usize)(i).expect("chr");
 
         let n_mapper_id = (flags_6 >> 4) | (flags_7 & 0xF0);
         if n_mapper_id != 0 {
-            panic!("unsupported mapper ID")
+            panic!("unsupported mapper ID {}", n_mapper_id)
         }
 
         let cart = Cartridge {

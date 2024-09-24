@@ -24,6 +24,7 @@ pub enum Instruction {
     LAX, AAX, DCP,
     ISC, SLO, RLA,
     SRE, KIL, DOP,
+    AAC, TOP,
 }
 
 #[derive(Debug)]
@@ -83,17 +84,17 @@ impl Nmos6502 {
         match opcode {
             0x00 => Some((Instruction::BRK, AddressingMode::IMP, 7)),
             0x01 => Some((Instruction::ORA, AddressingMode::IZX, 6)),
-            0x02 => Some((Instruction::NOP, AddressingMode::IMP, 2)),
+            0x02 => Some((Instruction::KIL, AddressingMode::IMP, 2)),
             0x03 => Some((Instruction::SLO, AddressingMode::IZX, 8)),
-            0x04 => Some((Instruction::NOP, AddressingMode::ZP0, 3)),
+            0x04 => Some((Instruction::DOP, AddressingMode::ZP0, 3)),
             0x05 => Some((Instruction::ORA, AddressingMode::ZP0, 3)),
             0x06 => Some((Instruction::ASL, AddressingMode::ZP0, 5)),
             0x07 => Some((Instruction::SLO, AddressingMode::ZP0, 5)),
             0x08 => Some((Instruction::PHP, AddressingMode::IMP, 3)),
             0x09 => Some((Instruction::ORA, AddressingMode::IMM, 2)),
             0x0A => Some((Instruction::ASL, AddressingMode::ACC, 2)),
-            0x0B => Some((Instruction::NOP, AddressingMode::IMP, 2)),
-            0x0C => Some((Instruction::NOP, AddressingMode::ABS, 4)),
+            0x0B => Some((Instruction::AAC, AddressingMode::IMM, 2)),
+            0x0C => Some((Instruction::TOP, AddressingMode::ABS, 4)),
             0x0D => Some((Instruction::ORA, AddressingMode::ABS, 4)),
             0x0E => Some((Instruction::ASL, AddressingMode::ABS, 6)),
             0x0F => Some((Instruction::SLO, AddressingMode::ABS, 6)),

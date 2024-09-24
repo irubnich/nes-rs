@@ -552,6 +552,14 @@ impl CPU {
                 // unofficial
                 cycles
             }
+            (Instruction::TOP, OpInput::UseAddress(_addr), cycles, _) => {
+                // unofficial
+                cycles
+            }
+            (Instruction::AAC, OpInput::UseAddress(_addr), cycles, _) => {
+                // unofficial
+                cycles
+            }
 
             (Instruction::NOP, OpInput::UseImplied, cycles, _) => {
                 // noop
@@ -562,7 +570,7 @@ impl CPU {
                 cycles
             }
             (_, _, _, _) => {
-                panic!("can't execute {:?}", decoded_instr.0);
+                panic!("can't execute {:?} {:?}", decoded_instr.0, decoded_instr.1);
             },
         }
     }
