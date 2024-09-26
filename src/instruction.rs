@@ -39,7 +39,7 @@ pub enum OpInput {
     UseAddress(u16),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum AddressingMode {
     IMP,
     IMM,

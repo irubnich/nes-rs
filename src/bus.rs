@@ -28,14 +28,14 @@ impl Bus {
         }
     }
 
-    pub fn cpu_read(&mut self, addr: u16) -> u8 {
+    pub fn cpu_read(&mut self, addr: u16, read_only: bool) -> u8 {
         let (was_read, data) = self.cartridge.borrow().cpu_read(addr);
         if was_read {
             data
         } else if addr <= 0x1FFF {
             self.memory.get_byte(addr & 0x07FF)
         } else if addr >= 0x2000 && addr <= 0x3FFF {
-            self.ppu.borrow_mut().cpu_read(addr & 0x0007)
+            self.ppu.borrow_mut().cpu_read(addr & 0x0007, read_only)
         } else {
             0x00
         }

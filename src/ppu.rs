@@ -6,6 +6,7 @@ use rand::Rng;
 
 use crate::cartridge::Cartridge;
 
+#[derive(Debug)]
 pub struct PPU {
     //tbl_name: [[u8; 1024]; 2],
     tbl_pattern: [[u8; 4096]; 2],
@@ -15,7 +16,7 @@ pub struct PPU {
 
     pub spr_screen: olc::Sprite,
     _spr_name_table: [olc::Sprite; 2],
-    spr_pattern_table: [olc::Sprite; 2],
+    pub spr_pattern_table: [olc::Sprite; 2],
 
     pub frame_complete: bool,
     scanline: i32,
@@ -179,11 +180,15 @@ impl PPU {
         ppu
     }
 
-    pub fn cpu_read(&mut self, addr: u16) -> u8 {
+    pub fn cpu_read(&mut self, addr: u16, read_only: bool) -> u8 {
         match addr {
             0x0000 => 0x00,
             0x0001 => 0x00,
             0x0002 => {
+                if read_only {
+                    return self.status.bits();
+                }
+
                 // hack
                 self.status.set(PPUStatus::PS_VERTICAL_BLANK, true);
 
@@ -197,6 +202,10 @@ impl PPU {
             0x0005 => 0x00,
             0x0006 => 0x00,
             0x0007 => {
+                if read_only {
+                    return 0x00;
+                }
+
                 let data = self.ppu_data_buffer;
                 self.ppu_data_buffer = self.ppu_read(self.ppu_address);
 
@@ -326,12 +335,19 @@ impl PPU {
                 for row in 0..8 {
                     let mut tile_lsb = self.ppu_read(u16::from(i) * 0x1000 + offset + row);
                     let mut tile_msb = self.ppu_read(u16::from(i) * 0x1000 + offset + row + 8);
+                    // println!("tile_lsb: {}, tile_msb: {}", tile_lsb, tile_msb);
+                    // println!("addr: {:04X}", u16::from(i) * 0x1000 + offset + row);
 
                     for col in 0..8 {
                         let pixel = (tile_lsb & 0x01) + (tile_msb & 0x01);
+                        if pixel != 0 {
+                            //println!("pixel: {}", pixel);
+                        }
 
                         tile_lsb >>= 1;
                         tile_msb >>= 1;
+
+                        //println!("setting ({}, {}) = {}", (tile_x * 8 + (7 - col)), (tile_y * 8 + row), self.get_color_from_palette_ram(palette, pixel));
 
                         self.spr_pattern_table[i as usize].set_pixel(
                             (tile_x * 8 + (7 - col)).into(),
@@ -345,8 +361,8 @@ impl PPU {
     }
 
     pub fn get_color_from_palette_ram(&self, palette: u8, pixel: u8) -> olc::Pixel {
-        let addr = self.ppu_read(0x3F00 + (u16::from(palette) << 2) + u16::from(pixel)) & 0x3F;
+        let addr = self.ppu_read(0x3F00 + (u16::from(palette) << 2) + u16::from(pixel));
 
-        self.pal_screen[addr as usize]
+        self.pal_screen[addr as usize & 0x3F]
     }
 }

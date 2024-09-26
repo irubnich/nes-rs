@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::bus::Bus;
 use crate::registers::{Registers, StackPointer, Status, StatusArgs};
 use crate::instruction::{DecodedInstr, Nmos6502, AddressingMode, OpInput, Instruction};
@@ -15,7 +17,7 @@ pub struct CPU {
 
 impl CPU {
     pub fn get_byte(&mut self, address: u16) -> u8 {
-        self.bus.cpu_read(address)
+        self.bus.cpu_read(address, false)
     }
 
     pub fn set_byte(&mut self, address: u16, value: u8) {
@@ -79,7 +81,7 @@ impl CPU {
                     AddressingMode::ZPY => (OpInput::UseAddress(u16::from(slice[0].wrapping_add(y))), cycles, false),
                     AddressingMode::REL => {
                         let offset = slice[0];
-                        let sign_extend = if offset & 0x80 == 0x80 { 0xFFu8 } else { 0x0 };
+                        let sign_extend = if offset & 0x80 == 0x80 { 0xFF } else { 0x0 };
                         let rel = u16::from_le_bytes([offset, sign_extend]);
                         (OpInput::UseRelative(rel), cycles, false)
                     },
@@ -947,5 +949,120 @@ impl CPU {
                 ..StatusArgs::none()
             })
         );
+    }
+
+    pub fn disassemble(&mut self, start: u16, stop: u16) -> HashMap<u16, String> {
+        let mut map = HashMap::new();
+
+        let mut addr = start;
+
+        while addr <= stop {
+            if addr >= u16::MAX {
+                break;
+            }
+
+            let line_addr = addr.clone();
+
+            let mut str = String::new();
+            str += format!("${:04X}: ", addr).as_str();
+
+            let opcode = self.bus.cpu_read(addr, true);
+            addr = addr.wrapping_add(1);
+
+            let decoded = Nmos6502::decode(opcode).unwrap();
+            str += format!("{:?} ", decoded.0).as_str();
+
+            match decoded.1 {
+                AddressingMode::IMP => {
+                    str += " {IMP}";
+                }
+                AddressingMode::IMM => {
+                    let val = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    str += format!("#${:02X} {{IMM}}", val).as_str();
+                }
+                AddressingMode::ZP0 => {
+                    let val = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    str += format!("${:02X} {{ZP0}}", val).as_str();
+                }
+                AddressingMode::ZPX => {
+                    let val = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    str += format!("${:02X}, X {{ZPX}}", val).as_str();
+                }
+                AddressingMode::ZPY => {
+                    let val = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    str += format!("${:02X}, Y {{ZPY}}", val).as_str();
+                }
+                AddressingMode::IZX => {
+                    let val = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    str += format!("${:02X}, X {{IZX}}", val).as_str();
+                }
+                AddressingMode::IZY => {
+                    let val = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    str += format!("${:02X}, Y {{IZY}}", val).as_str();
+                }
+                AddressingMode::ABS => {
+                    let lo = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    let hi = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+
+                    str += format!("${:04X} {{ABS}}", address_from_bytes(lo, hi)).as_str();
+                }
+                AddressingMode::ABX => {
+                    let lo = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    let hi = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+
+                    str += format!("${:04X}, X {{ABX}}", address_from_bytes(lo, hi)).as_str();
+                }
+                AddressingMode::ABY => {
+                    let lo = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    let hi = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+
+                    str += format!("${:04X}, Y {{ABY}}", address_from_bytes(lo, hi)).as_str();
+                }
+                AddressingMode::IND => {
+                    let lo = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    let hi = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+
+                    str += format!("(${:04X}) {{IND}}", address_from_bytes(lo, hi)).as_str();
+                }
+                AddressingMode::REL => {
+                    let offset = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+
+                    let sign_extend = if offset & 0x80 == 0x80 { 0xFF } else { 0x0 };
+                    let rel = u16::from_le_bytes([offset, sign_extend]);
+
+                    str += format!("${:02X} [${:04X}] {{REL}}", rel, addr.wrapping_add(u16::from(rel))).as_str();
+                }
+                AddressingMode::ACC => {
+                    str += " {ACC}";
+                }
+                AddressingMode::BuggyIndirect => {
+                    let lo = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+                    let hi = self.bus.cpu_read(addr, true);
+                    addr = addr.wrapping_add(1);
+
+                    str += format!("(${:04X}) {{BIND}}", address_from_bytes(lo, hi)).as_str();
+                }
+            }
+
+            map.insert(line_addr, str);
+        }
+
+        map
     }
 }

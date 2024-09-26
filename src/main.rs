@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use rs6502::bus::Bus;
@@ -16,6 +17,7 @@ struct Emulator {
     residual_time: f32,
     system_clock_counter: i32,
     selected_palette: u8,
+    map_asm: HashMap<u16, String>,
 }
 
 impl Emulator {
@@ -51,6 +53,44 @@ impl Emulator {
         }
     }
 
+    fn draw_code(&self, x: i32, y: i32, lines: i32) {
+        let mut pc = self.cpu.registers.pc.clone();
+        let mut line_y = (lines >> 1) * 10 + y;
+
+        match self.map_asm.get(&pc) {
+            Some(line) => {
+                olc::draw_string(x, line_y, line, olc::CYAN).unwrap();
+            }
+            None => ()
+        }
+
+        while line_y < (lines * 10) + y {
+            pc = pc.wrapping_add(1);
+
+            match self.map_asm.get(&pc) {
+                Some(line) => {
+                    line_y += 10;
+                    olc::draw_string(x, line_y, line, olc::WHITE).unwrap();
+                }
+                None => ()
+            }
+        }
+
+        pc = self.cpu.registers.pc.clone();
+        line_y = (lines >> 1) * 10 + y;
+        while line_y > y {
+            pc = pc.wrapping_sub(1);
+
+            match self.map_asm.get(&pc) {
+                Some(line) => {
+                    line_y -= 10;
+                    olc::draw_string(x, line_y, line, olc::WHITE).unwrap();
+                }
+                None => ()
+            }
+        }
+    }
+
     pub fn get_color(&self, s: Status) -> olc::Pixel {
         if self.cpu.registers.status.contains(s) {
             olc::GREEN
@@ -78,8 +118,12 @@ impl Emulator {
 
 impl olc::Application for Emulator {
     fn on_user_create(&mut self) -> Result<(), olc::Error> {
+        self.map_asm = self.cpu.disassemble(0x0000, 0xFFFF);
+
         self.reset();
         //self.cpu.registers.pc = 0xC000;
+
+        //println!("{}", self.ppu.borrow().get_pattern_table(0).get_pixel(100, 100));
 
         Ok(())
     }
@@ -142,6 +186,7 @@ impl olc::Application for Emulator {
         }
 
         self.draw_cpu(516, 2);
+        self.draw_code(516, 72, 26);
         //self.draw_ram(516, 100, &mut 0x0000, 16, 16);
         //self.draw_ram(516, 300, &mut 0x8000, 16, 16);
 
@@ -170,7 +215,7 @@ impl olc::Application for Emulator {
 }
 
 fn main() {
-    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("nestest2.nes"))));
+    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("nestest.nes"))));
 
     let ppu = Rc::new(RefCell::new(PPU::new(cartridge.clone())));
 
@@ -193,6 +238,7 @@ fn main() {
         residual_time: 0f32,
         system_clock_counter: 0,
         selected_palette: 0,
+        map_asm: HashMap::new(),
     };
     olc::start("nes", &mut emulator, 780, 480, 2, 2).unwrap();
 }
