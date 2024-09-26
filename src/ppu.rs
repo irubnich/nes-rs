@@ -295,7 +295,14 @@ impl PPU {
 
             self.tbl_pattern[idx1 as usize][idx2 as usize] = data;
         } else if addr >= 0x2000 && addr <= 0x3EFF {
+            // this works... why
+            // let mut addr = addr & 0x001F;
+            // if addr == 0x0010 { addr = 0x0000 };
+            // if addr == 0x0014 { addr = 0x0004 };
+            // if addr == 0x0018 { addr = 0x0008 };
+            // if addr == 0x001C { addr = 0x000C };
 
+            // self.tbl_palette[addr as usize] = data;
         } else if addr >= 0x3F00 && addr <= 0x3FFF {
             let mut addr = addr & 0x001F;
             if addr == 0x0010 { addr = 0x0000 };
