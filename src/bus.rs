@@ -24,6 +24,7 @@ impl Bus {
         } else if addr <= 0x1FFF {
             self.memory.set_byte(addr & 0x07FF, data);
         } else if addr >= 0x2000 && addr <= 0x3FFF {
+            println!("bus: writing to PPU. addr: {:X}, data: {:X}", addr & 0x0007, data);
             self.ppu.borrow_mut().cpu_write(addr & 0x0007, data);
         }
     }

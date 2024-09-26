@@ -123,7 +123,16 @@ impl olc::Application for Emulator {
         self.reset();
         //self.cpu.registers.pc = 0xC000;
 
-        //println!("{}", self.ppu.borrow().get_pattern_table(0).get_pixel(100, 100));
+        self.ppu.borrow_mut().build_pattern_table(0, self.selected_palette);
+        self.ppu.borrow_mut().build_pattern_table(1, self.selected_palette);
+        let ppu_borrow = self.ppu.borrow();
+        let tbl = ppu_borrow.get_pattern_table(0);
+
+        for x in 0..128 {
+            for y in 0..128 {
+                //println!("{}", tbl.get_pixel(x, y));
+            }
+        }
 
         Ok(())
     }

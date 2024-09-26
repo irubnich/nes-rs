@@ -23,7 +23,7 @@ impl Mapper {
     }
 
     pub fn cpu_map_write(&self, addr: u16) -> (bool, u32) {
-        if addr >= 0x8000 && addr <= 0xBFFF {
+        if addr >= 0x8000 {
             let and_with = if self.prg_banks > 1 { 0x7FFF } else { 0x3FFF };
             let mapped_addr = addr & and_with;
             return (true, mapped_addr.into());
@@ -41,8 +41,10 @@ impl Mapper {
     }
 
     pub fn ppu_map_write(&self, addr: u16) -> (bool, u32) {
-        if addr <= 0x1FFF && self.chr_banks == 0 {
-            return (true, addr.into());
+        if addr <= 0x1FFF {
+            if self.chr_banks == 0 {
+                return (true, addr.into());
+            }
         }
 
         (false, 0)

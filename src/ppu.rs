@@ -31,6 +31,8 @@ pub struct PPU {
     address_latch: u8,
     ppu_data_buffer: u8,
     ppu_address: u16,
+
+    addr_hi: u8,
 }
 
 bitflags! {
@@ -175,6 +177,7 @@ impl PPU {
             address_latch: 0,
             ppu_data_buffer: 0,
             ppu_address: 0,
+            addr_hi: 0,
         };
 
         ppu
@@ -192,10 +195,10 @@ impl PPU {
                 // hack
                 self.status.set(PPUStatus::PS_VERTICAL_BLANK, true);
 
-                let out = (self.status.bits() & 0xE0) | (self.ppu_data_buffer & 0x1F);
+                let data = (self.status.bits() & 0xE0) | (self.ppu_data_buffer & 0x1F);
                 self.status.set(PPUStatus::PS_VERTICAL_BLANK, false);
                 self.address_latch = 0;
-                out
+                data
             },
             0x0003 => 0x00,
             0x0004 => 0x00,
@@ -209,9 +212,11 @@ impl PPU {
                 let data = self.ppu_data_buffer;
                 self.ppu_data_buffer = self.ppu_read(self.ppu_address);
 
-                if self.ppu_address > 0x3F00 {
+                if self.ppu_address >= 0x3F00 {
                     return self.ppu_data_buffer;
                 }
+
+                self.ppu_address += 1;
 
                 data
             },
@@ -233,15 +238,20 @@ impl PPU {
             0x0005 => (),
             0x0006 => {
                 if self.address_latch == 0 {
-                    self.ppu_address = (self.ppu_address & 0x00FF) | u16::from(data) << 8;
+                    self.addr_hi = data;
+                    println!("latch 0, setting hi from data = {:02X}", data);
                     self.address_latch = 1;
                 } else {
-                    self.ppu_address = (self.ppu_address & 0xFF00) | u16::from(data);
+                    let lo = data;
+                    self.ppu_address = u16::from(self.addr_hi) << 8 | u16::from(lo);
+                    println!("latch 1, setting ppu address = {:04X}", self.ppu_address);
                     self.address_latch = 0;
                 }
             },
             0x0007 => {
+                println!("PPU: writing {:02X} to {:04X}", data, self.ppu_address);
                 self.ppu_write(self.ppu_address, data);
+                self.ppu_address += 1;
             },
             _ => panic!("invalid CPU write from PPU")
         }
@@ -275,6 +285,7 @@ impl PPU {
 
     pub fn ppu_write(&mut self, addr: u16, data: u8) {
         let addr = addr & 0x3FFF;
+        println!("ppu_write: writing {:02X} to {:04X}", data, addr);
 
         if self.cart.borrow_mut().ppu_write(addr, data) {
             // done
@@ -328,20 +339,20 @@ impl PPU {
     }
 
     pub fn build_pattern_table(&mut self, i: u8, palette: u8) {
-        for tile_y in 0u16..16 {
-            for tile_x in 0u16..16 {
-                let offset = tile_y * 256 + tile_x * 16;
+        for tile_y in 0..16 {
+            for tile_x in 0..16 {
+                let offset = (tile_y * 256) + (tile_x * 16);
 
                 for row in 0..8 {
                     let mut tile_lsb = self.ppu_read(u16::from(i) * 0x1000 + offset + row);
                     let mut tile_msb = self.ppu_read(u16::from(i) * 0x1000 + offset + row + 8);
-                    // println!("tile_lsb: {}, tile_msb: {}", tile_lsb, tile_msb);
-                    // println!("addr: {:04X}", u16::from(i) * 0x1000 + offset + row);
+                    //println!("tile_lsb: {:02X}, tile_msb: {:02X}", tile_lsb, tile_msb);
 
                     for col in 0..8 {
                         let pixel = (tile_lsb & 0x01) + (tile_msb & 0x01);
-                        if pixel != 0 {
-                            //println!("pixel: {}", pixel);
+
+                        if tile_msb != 0 || tile_lsb != 0 {
+                            //println!("tile_msb: {:08b}, tile_lsb: {:08b}, pixel: {:02X}", tile_msb, tile_lsb, pixel);
                         }
 
                         tile_lsb >>= 1;
@@ -361,8 +372,10 @@ impl PPU {
     }
 
     pub fn get_color_from_palette_ram(&self, palette: u8, pixel: u8) -> olc::Pixel {
-        let addr = self.ppu_read(0x3F00 + (u16::from(palette) << 2) + u16::from(pixel));
+        let idx = self.ppu_read(0x3F00 + (u16::from(palette) * 4) + u16::from(pixel));
+        //println!("addr: {:02X}", 0x3F00 + (u16::from(palette) * 4) + u16::from(pixel));
+        //println!("idx: {:X}", idx);
 
-        self.pal_screen[addr as usize & 0x3F]
+        self.pal_screen[idx as usize & 0x3F]
     }
 }
