@@ -51,6 +51,8 @@ pub struct CPU {
 }
 
 impl CPU {
+    const SP_BASE: u16 = 0x0100;
+
     pub fn new(bus: Bus) -> CPU {
         let mut cpu = CPU {
             a: 0,
@@ -91,6 +93,7 @@ impl CPU {
         match self.instr.op() {
             LDX => self.ldx(),
             STX => self.stx(),
+            JSR => self.jsr(),
             JMP => self.jmp(),
             NOP => self.nop(),
             x => panic!("unimplemented op {:?}", x)
@@ -186,6 +189,17 @@ impl CPU {
         self.status.set(Status::N, val & 0x80 == 0x80);
     }
 
+    pub fn push(&mut self, val: u8) {
+        self.write(Self::SP_BASE | u16::from(self.sp), val);
+        self.sp = self.sp.wrapping_sub(1);
+    }
+
+    pub fn push_u16(&mut self, val: u16) {
+        let [lo, hi] = val.to_le_bytes();
+        self.push(hi);
+        self.push(lo);
+    }
+
     fn start_cycle(&mut self) {
         self.cycle = self.cycle.wrapping_add(1);
     }
@@ -201,16 +215,12 @@ impl CPU {
         let y = self.y;
         let sp = self.sp;
         let cycle = self.cycle;
-        let n = if self.status.contains(Status::N) { 'N' } else { 'n' };
-        let v = if self.status.contains(Status::V) { 'V' } else { 'v' };
-        let i = if self.status.contains(Status::I) { 'I' } else { 'i' };
-        let z = if self.status.contains(Status::Z) { 'Z' } else { 'z' };
-        let c = if self.status.contains(Status::C) { 'C' } else { 'c' };
+        let st = self.status.bits();
 
         let ppu_cycle = 0; // todo
         let ppu_scanline= 0; // todo
 
-        println!("{:<50} A:{acc:02X} X:{x:02X} Y:{y:02X} P:{n}{v}--d{i}{z}{c} SP:{sp:02X} PPU:{ppu_cycle:3},{ppu_scanline:3} CYC:{cycle}", self.disassemble(pc));
+        println!("{:<50} A:{acc:02X} X:{x:02X} Y:{y:02X} P:{st:02X} SP:{sp:02X} PPU:{ppu_cycle:3},{ppu_scanline:3} CYC:{cycle}", self.disassemble(pc));
     }
 
     fn disassemble(&mut self, pc: u16) -> &str {
@@ -219,7 +229,7 @@ impl CPU {
         let opcode = self.peek(pc);
         let instr = CPU::INSTRUCTIONS[opcode as usize].op();
 
-        let _ = write!(self.disasm, "${pc:04X} ${opcode:02X} ");
+        let _ = write!(self.disasm, "{pc:04X}  {opcode:02X} ");
         let _ = write!(self.disasm, "        {instr:?}");
 
         &self.disasm

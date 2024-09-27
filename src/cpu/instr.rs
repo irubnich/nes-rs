@@ -105,6 +105,12 @@ impl CPU {
         self.write(self.abs_addr, self.x);
     }
 
+    pub fn jsr(&mut self) {
+        let _ = self.read(Self::SP_BASE | u16::from(self.sp));
+        self.push_u16(self.pc.wrapping_sub(1));
+        self.pc = self.abs_addr;
+    }
+
     pub fn nop(&mut self) {
         self.fetch_data_cross();
     }
