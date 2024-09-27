@@ -195,7 +195,7 @@ impl PPU {
                 // hack
                 self.status.set(PPUStatus::PS_VERTICAL_BLANK, true);
 
-                let data = (self.status.bits() & 0xE0) | (self.ppu_data_buffer & 0x1F);
+                let data = self.status.bits();
                 self.status.set(PPUStatus::PS_VERTICAL_BLANK, false);
                 self.address_latch = 0;
                 data
@@ -239,17 +239,17 @@ impl PPU {
             0x0006 => {
                 if self.address_latch == 0 {
                     self.addr_hi = data;
-                    println!("latch 0, setting hi from data = {:02X}", data);
+                    //println!("latch 0, setting hi from data = {:02X}", data);
                     self.address_latch = 1;
                 } else {
                     let lo = data;
                     self.ppu_address = u16::from(self.addr_hi) << 8 | u16::from(lo);
-                    println!("latch 1, setting ppu address = {:04X}", self.ppu_address);
+                    println!("setting ppu address = {:04X}", self.ppu_address);
                     self.address_latch = 0;
                 }
             },
             0x0007 => {
-                println!("PPU: writing {:02X} to {:04X}", data, self.ppu_address);
+                //println!("PPU: writing {:02X} to {:04X}", data, self.ppu_address);
                 self.ppu_write(self.ppu_address, data);
                 self.ppu_address += 1;
             },
@@ -285,7 +285,6 @@ impl PPU {
 
     pub fn ppu_write(&mut self, addr: u16, data: u8) {
         let addr = addr & 0x3FFF;
-        println!("ppu_write: writing {:02X} to {:04X}", data, addr);
 
         if self.cart.borrow_mut().ppu_write(addr, data) {
             // done

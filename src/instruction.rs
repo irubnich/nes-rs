@@ -35,7 +35,7 @@ pub enum Instruction {
 pub enum OpInput {
     UseImplied,
     UseImmediate(u8),
-    UseRelative(u16),
+    UseRelative(i8),
     UseAddress(u16),
 }
 

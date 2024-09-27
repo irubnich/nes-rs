@@ -80,10 +80,10 @@ impl CPU {
                     AddressingMode::ZPX => (OpInput::UseAddress(u16::from(slice[0].wrapping_add(x))), cycles, false),
                     AddressingMode::ZPY => (OpInput::UseAddress(u16::from(slice[0].wrapping_add(y))), cycles, false),
                     AddressingMode::REL => {
-                        let offset = slice[0];
-                        let sign_extend = if offset & 0x80 == 0x80 { 0xFF } else { 0x0 };
-                        let rel = u16::from_le_bytes([offset, sign_extend]);
-                        (OpInput::UseRelative(rel), cycles, false)
+                        // PC is unsigned
+                        // rel is signed
+                        // final address is PC + signed but if signed is negative PC goes down
+                        (OpInput::UseRelative(slice[0] as i8), cycles, false)
                     },
                     AddressingMode::ABS => (OpInput::UseAddress(address_from_bytes(slice[0], slice[1])), cycles, false),
                     AddressingMode::ABX => {
@@ -165,12 +165,15 @@ impl CPU {
                 cycles + if extra_cycle { 1 } else { 0 }
             }
             (Instruction::BEQ, OpInput::UseRelative(rel), cycles, _) => {
-                let addr = self.registers.pc.wrapping_add(rel);
-                self.branch_if_equal(addr);
-                cycles
+                let addr = self.registers.pc.wrapping_add_signed(rel as i16);
+                if self.branch_if_equal(addr) {
+                    cycles + 1
+                } else {
+                    cycles
+                }
             },
             (Instruction::BMI, OpInput::UseRelative(rel), cycles, _) => {
-                let addr = self.registers.pc.wrapping_add(rel);
+                let addr = self.registers.pc.wrapping_add_signed(rel as i16);
                 self.branch_if_minus(addr);
                 cycles
             },
@@ -263,7 +266,7 @@ impl CPU {
                 cycles + if extra_cycle { 1 } else { 0 }
             }
             (Instruction::BNE, OpInput::UseRelative(rel), cycles, _) => {
-                let addr = self.registers.pc.wrapping_add(rel);
+                let addr = self.registers.pc.wrapping_add_signed(rel as i16);
                 self.branch_if_not_equal(addr);
                 cycles
             }
@@ -287,12 +290,12 @@ impl CPU {
                 cycles
             }
             (Instruction::BPL, OpInput::UseRelative(rel), cycles, _) => {
-                let addr = self.registers.pc.wrapping_add(rel);
+                let addr = self.registers.pc.wrapping_add_signed(rel as i16);
                 self.branch_if_positive(addr);
                 cycles
             }
             (Instruction::BCS, OpInput::UseRelative(rel), cycles, _) => {
-                let addr = self.registers.pc.wrapping_add(rel);
+                let addr = self.registers.pc.wrapping_add_signed(rel as i16);
                 self.branch_if_carry_set(addr);
                 cycles
             }
@@ -301,7 +304,7 @@ impl CPU {
                 cycles
             }
             (Instruction::BCC, OpInput::UseRelative(rel), cycles, _) => {
-                let addr = self.registers.pc.wrapping_add(rel);
+                let addr = self.registers.pc.wrapping_add_signed(rel as i16);
                 self.branch_if_carry_clear(addr);
                 cycles
             }
@@ -326,12 +329,12 @@ impl CPU {
                 cycles
             }
             (Instruction::BVS, OpInput::UseRelative(rel), cycles, _) => {
-                let addr = self.registers.pc.wrapping_add(rel);
+                let addr = self.registers.pc.wrapping_add_signed(rel as i16);
                 self.branch_if_overflow_set(addr);
                 cycles
             }
             (Instruction::BVC, OpInput::UseRelative(rel), cycles, _) => {
-                let addr = self.registers.pc.wrapping_add(rel);
+                let addr = self.registers.pc.wrapping_add_signed(rel as i16);
                 self.branch_if_overflow_clear(addr);
                 cycles
             }
@@ -718,9 +721,12 @@ impl CPU {
         self.registers.pc = addr;
     }
 
-    fn branch_if_equal(&mut self, addr: u16) {
+    fn branch_if_equal(&mut self, addr: u16) -> bool {
         if self.registers.status.contains(Status::PS_ZERO) {
             self.registers.pc = addr;
+            true
+        } else {
+            false
         }
     }
 
@@ -1039,13 +1045,12 @@ impl CPU {
                     str += format!("(${:04X}) {{IND}}", address_from_bytes(lo, hi)).as_str();
                 }
                 AddressingMode::REL => {
-                    let offset = self.bus.cpu_read(addr, true);
+                    let rel = self.bus.cpu_read(addr, true) as i8;
                     addr = addr.wrapping_add(1);
 
-                    let sign_extend = if offset & 0x80 == 0x80 { 0xFF } else { 0x0 };
-                    let rel = u16::from_le_bytes([offset, sign_extend]);
+                    let jmp_to = addr.wrapping_add_signed(rel as i16);
 
-                    str += format!("${:02X} [${:04X}] {{REL}}", rel, addr.wrapping_add(u16::from(rel))).as_str();
+                    str += format!("${:02X} [${:04X}] {{REL}}", rel, jmp_to).as_str();
                 }
                 AddressingMode::ACC => {
                     str += " {ACC}";

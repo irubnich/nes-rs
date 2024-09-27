@@ -125,14 +125,6 @@ impl olc::Application for Emulator {
 
         self.ppu.borrow_mut().build_pattern_table(0, self.selected_palette);
         self.ppu.borrow_mut().build_pattern_table(1, self.selected_palette);
-        let ppu_borrow = self.ppu.borrow();
-        let tbl = ppu_borrow.get_pattern_table(0);
-
-        for x in 0..128 {
-            for y in 0..128 {
-                //println!("{}", tbl.get_pixel(x, y));
-            }
-        }
 
         Ok(())
     }
