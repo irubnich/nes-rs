@@ -45,6 +45,7 @@ pub struct CPU {
     // state
     pub cycle: usize,
     pub abs_addr: u16,
+    pub rel_addr: u16,
     pub instr: Instr,
     pub fetched_data: u8,
     pub disasm: String,
@@ -65,6 +66,7 @@ impl CPU {
             cycle: 0,
             bus,
             abs_addr: 0,
+            rel_addr: 0,
             instr: CPU::INSTRUCTIONS[0x00],
             fetched_data: 0,
             disasm: String::with_capacity(100),
@@ -84,17 +86,32 @@ impl CPU {
         self.instr = CPU::INSTRUCTIONS[opcode as usize];
 
         match self.instr.addr_mode() {
+            IMP => self.imp(),
             IMM => self.imm(),
+            REL => self.rel(),
             ZP0 => self.zp0(),
             ABS => self.abs(),
             x => panic!("unimplemented addr mode {:?}", x)
         }
 
         match self.instr.op() {
+            LDA => self.lda(),
             LDX => self.ldx(),
+            STA => self.sta(),
             STX => self.stx(),
             JSR => self.jsr(),
+            SEC => self.sec(),
+            CLC => self.clc(),
+            BCS => self.bcs(),
+            BCC => self.bcc(),
+            BIT => self.bit(),
+            BEQ => self.beq(),
+            BVS => self.bvs(),
+            BVC => self.bvc(),
+            BPL => self.bpl(),
+            BNE => self.bne(),
             JMP => self.jmp(),
+            RTS => self.rts(),
             NOP => self.nop(),
             x => panic!("unimplemented op {:?}", x)
         }
@@ -200,6 +217,17 @@ impl CPU {
         self.push(lo);
     }
 
+    pub fn pop_u16(&mut self) -> u16 {
+        let lo = self.pop();
+        let hi = self.pop();
+        u16::from_le_bytes([lo, hi])
+    }
+
+    pub fn pop(&mut self) -> u8 {
+        self.sp = self.sp.wrapping_add(1);
+        self.read(Self::SP_BASE | u16::from(self.sp))
+    }
+
     fn start_cycle(&mut self) {
         self.cycle = self.cycle.wrapping_add(1);
     }
@@ -233,5 +261,9 @@ impl CPU {
         let _ = write!(self.disasm, "        {instr:?}");
 
         &self.disasm
+    }
+
+    fn pages_differ(addr1: u16, addr2: u16) -> bool {
+        (addr1 & 0xFF00) != (addr2 & 0xFF00)
     }
 }

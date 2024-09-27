@@ -1,3 +1,4 @@
+use crate::cpu::Status;
 use crate::cpu::CPU;
 
 #[derive(Copy, Clone, Debug)]
@@ -41,6 +42,7 @@ impl Instr {
     }
 }
 
+use bitflags::Flags;
 use AddrMode::{ABS, ABX, ABY, ACC, IDX, IDY, IMM, IMP, IND, REL, ZP0, ZPX, ZPY};
 use Operation::{
     ADC, AHX, ALR, ANC, AND, ARR, ASL, AXS, BCC, BCS, BEQ, BIT, BMI, BNE, BPL, BRK, BVC, BVS, CLC,
@@ -74,6 +76,10 @@ impl CPU {
     // addressing modes
     //
 
+    pub fn imp(&mut self) {
+        let _ = self.read(self.pc);
+    }
+
     pub fn abs(&mut self) {
         self.abs_addr = self.read_instr_u16();
     }
@@ -81,6 +87,10 @@ impl CPU {
     pub fn imm(&mut self) {
         self.abs_addr = self.pc;
         self.pc = self.pc.wrapping_add(1);
+    }
+
+    pub fn rel(&mut self) {
+        self.rel_addr = u16::from(self.read_instr());
     }
 
     pub fn zp0(&mut self) {
@@ -91,8 +101,22 @@ impl CPU {
     // operations
     //
 
+    pub fn sec(&mut self) {
+        self.status.set(Status::C, true);
+    }
+
+    pub fn clc(&mut self) {
+        self.status.set(Status::C, false);
+    }
+
     pub fn jmp(&mut self) {
         self.pc = self.abs_addr;
+    }
+
+    pub fn lda(&mut self) {
+        self.fetch_data_cross();
+        self.a = self.fetched_data;
+        self.set_zn_status(self.a);
     }
 
     pub fn ldx(&mut self) {
@@ -101,8 +125,62 @@ impl CPU {
         self.set_zn_status(self.x);
     }
 
+    pub fn sta(&mut self) {
+        self.write(self.abs_addr, self.a);
+    }
+
     pub fn stx(&mut self) {
         self.write(self.abs_addr, self.x);
+    }
+
+    pub fn bit(&mut self) {
+        self.fetch_data_cross();
+        let val = self.a & self.fetched_data;
+        self.status.set(Status::Z, val == 0);
+        self.status.set(Status::N, self.fetched_data & (1 << 7) > 0);
+        self.status.set(Status::V, self.fetched_data & (1 << 6) > 0);
+    }
+
+    pub fn bcc(&mut self) {
+        if !self.status.intersects(Status::C) {
+            self.branch();
+        }
+    }
+
+    pub fn bcs(&mut self) {
+        if self.status.intersects(Status::C) {
+            self.branch();
+        }
+    }
+
+    pub fn bvs(&mut self) {
+        if self.status.intersects(Status::V) {
+            self.branch();
+        }
+    }
+
+    pub fn bvc(&mut self) {
+        if !self.status.intersects(Status::V) {
+            self.branch();
+        }
+    }
+
+    pub fn bpl(&mut self) {
+        if !self.status.intersects(Status::N) {
+            self.branch();
+        }
+    }
+
+    pub fn beq(&mut self) {
+        if self.status.intersects(Status::Z) {
+            self.branch();
+        }
+    }
+
+    pub fn bne(&mut self) {
+        if !self.status.intersects(Status::Z) {
+            self.branch();
+        }
     }
 
     pub fn jsr(&mut self) {
@@ -111,7 +189,29 @@ impl CPU {
         self.pc = self.abs_addr;
     }
 
+    pub fn rts(&mut self) {
+        let _ = self.read(Self::SP_BASE | u16::from(self.sp));
+        self.pc = self.pop_u16().wrapping_add(1);
+        let _ = self.read(self.pc);
+    }
+
     pub fn nop(&mut self) {
         self.fetch_data_cross();
+    }
+
+    fn branch(&mut self) {
+        self.read(self.pc);
+
+        self.abs_addr = if self.rel_addr & 0x80 == 0x80 {
+            self.pc.wrapping_add(self.rel_addr | 0xFF00)
+        } else {
+            self.pc.wrapping_add(self.rel_addr)
+        };
+
+        if Self::pages_differ(self.abs_addr, self.pc) {
+            self.read(self.pc);
+        }
+
+        self.pc = self.abs_addr;
     }
 }
