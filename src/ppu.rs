@@ -239,7 +239,6 @@ impl PPU {
             0x0006 => {
                 if self.address_latch == 0 {
                     self.addr_hi = data;
-                    //println!("latch 0, setting hi from data = {:02X}", data);
                     self.address_latch = 1;
                 } else {
                     let lo = data;
@@ -249,7 +248,7 @@ impl PPU {
                 }
             },
             0x0007 => {
-                //println!("PPU: writing {:02X} to {:04X}", data, self.ppu_address);
+                //println!("[ppu] set {:04X} = {:02X}", self.ppu_address, data);
                 self.ppu_write(self.ppu_address, data);
                 self.ppu_address += 1;
             },
@@ -311,7 +310,7 @@ impl PPU {
 
             self.tbl_palette[addr as usize] = data;
         } else {
-
+            println!("invalid write to {:X}", addr);
         }
     }
 
@@ -352,19 +351,12 @@ impl PPU {
                 for row in 0..8 {
                     let mut tile_lsb = self.ppu_read(u16::from(i) * 0x1000 + offset + row);
                     let mut tile_msb = self.ppu_read(u16::from(i) * 0x1000 + offset + row + 8);
-                    //println!("tile_lsb: {:02X}, tile_msb: {:02X}", tile_lsb, tile_msb);
 
                     for col in 0..8 {
                         let pixel = (tile_lsb & 0x01) + (tile_msb & 0x01);
 
-                        if tile_msb != 0 || tile_lsb != 0 {
-                            //println!("tile_msb: {:08b}, tile_lsb: {:08b}, pixel: {:02X}", tile_msb, tile_lsb, pixel);
-                        }
-
                         tile_lsb >>= 1;
                         tile_msb >>= 1;
-
-                        //println!("setting ({}, {}) = {}", (tile_x * 8 + (7 - col)), (tile_y * 8 + row), self.get_color_from_palette_ram(palette, pixel));
 
                         self.spr_pattern_table[i as usize].set_pixel(
                             (tile_x * 8 + (7 - col)).into(),
@@ -379,8 +371,10 @@ impl PPU {
 
     pub fn get_color_from_palette_ram(&self, palette: u8, pixel: u8) -> olc::Pixel {
         let idx = self.ppu_read(0x3F00 + (u16::from(palette) * 4) + u16::from(pixel));
-        //println!("addr: {:02X}", 0x3F00 + (u16::from(palette) * 4) + u16::from(pixel));
-        //println!("idx: {:X}", idx);
+
+        if idx != 0 {
+            println!("requesting palette data from {:02X}", idx as usize & 0x3F);
+        }
 
         self.pal_screen[idx as usize & 0x3F]
     }

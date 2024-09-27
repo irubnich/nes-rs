@@ -123,9 +123,6 @@ impl olc::Application for Emulator {
         self.reset();
         //self.cpu.registers.pc = 0xC000;
 
-        self.ppu.borrow_mut().build_pattern_table(0, self.selected_palette);
-        self.ppu.borrow_mut().build_pattern_table(1, self.selected_palette);
-
         Ok(())
     }
 

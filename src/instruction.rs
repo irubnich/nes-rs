@@ -31,7 +31,7 @@ pub enum Instruction {
     AXS,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum OpInput {
     UseImplied,
     UseImmediate(u8),

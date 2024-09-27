@@ -166,10 +166,16 @@ impl CPU {
             }
             (Instruction::BEQ, OpInput::UseRelative(rel), cycles, _) => {
                 let addr = self.registers.pc.wrapping_add_signed(rel as i16);
+
+                let mut new_cycles = cycles;
+                if (addr & 0xFF00) != (self.registers.pc & 0xFF00) {
+                    new_cycles += 1;
+                }
+
                 if self.branch_if_equal(addr) {
-                    cycles + 1
+                    new_cycles + 1
                 } else {
-                    cycles
+                    new_cycles
                 }
             },
             (Instruction::BMI, OpInput::UseRelative(rel), cycles, _) => {
@@ -588,9 +594,12 @@ impl CPU {
     }
 
     pub fn clock(&mut self) {
+        let mut op = (Instruction::AAC, OpInput::UseImplied, 0u8, false);
         if self.cycles == 0 {
             let opcode = self.fetch_next_and_decode().unwrap();
+            op = opcode.clone();
             self.cycles = opcode.2;
+            println!("{:04X}  {}        {:?}                             A:{:02X} X:{:02X} Y:{:02X} P:{} SP:{:02X} PPU:???,??? CYC:{}", self.registers.pc, "???", op.0, self.registers.a, self.registers.x, self.registers.y, self.registers.status.bits(), self.registers.stkp.0, self.clock_count);
             self.execute_instruction(opcode);
         }
 
