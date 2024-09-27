@@ -29,23 +29,29 @@ pub struct CPU {
 
 impl CPU {
     pub fn new() -> CPU {
-        CPU {
+        let mut cpu = CPU {
             a: 0,
             x: 0,
             y: 0,
-            pc: 0,
-            sp: 0,
+            pc: 0xFFFC,
+            sp: 0xFD,
             status: Status::empty(),
             memory: Memory::new(),
-        }
+        };
+
+        cpu.status.set(Status::I, true);
+
+        cpu
     }
 
     pub fn clock(&self) {
 
     }
 
-    pub fn reset(&self) {
-
+    pub fn reset(&mut self) {
+        self.pc = 0xFFFC;
+        self.sp = self.sp - 3;
+        self.status.set(Status::I, true);
     }
 
     pub fn complete(&self) -> bool {
