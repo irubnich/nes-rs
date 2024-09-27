@@ -2,6 +2,8 @@ use bitflags::bitflags;
 
 use crate::{bus::Bus, memory::Memory};
 
+pub mod instr;
+
 bitflags! {
     pub struct Status: u8 {
         const N = 1 << 7;
@@ -51,8 +53,8 @@ impl CPU {
         cpu
     }
 
-    pub fn clock(&self) {
-
+    pub fn clock(&mut self) {
+        self.cycles += 1;
     }
 
     pub fn reset(&mut self) {
@@ -71,5 +73,12 @@ impl CPU {
 
     pub fn write(&mut self, addr: u16, data: u8) {
         self.bus.cpu_write(addr, data);
+    }
+
+    // read opcode and increment PC
+    pub fn read_instr(&mut self) -> u8 {
+        let val = self.read(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+        val
     }
 }

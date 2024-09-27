@@ -1,5 +1,3 @@
-pub mod instruction;
-pub mod registers;
 pub mod cartridge;
 pub mod mapper;
 pub mod cpu;
