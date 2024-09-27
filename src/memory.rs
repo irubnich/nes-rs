@@ -9,7 +9,7 @@ impl Memory {
         }
     }
 
-    pub fn get_byte(&mut self, address: u16) -> u8 {
+    pub fn get_byte(&self, address: u16) -> u8 {
         self.bytes[address as usize]
     }
 

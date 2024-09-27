@@ -1,17 +1,17 @@
 use bitflags::bitflags;
 
-use crate::memory::Memory;
+use crate::{bus::Bus, memory::Memory};
 
 bitflags! {
     pub struct Status: u8 {
-        const N = 0b1000_0000;
-        const V = 0b0100_0000;
-        const _ = 0b0010_0000; // unused
-        const B = 0b0001_0000;
-        const D = 0b0000_1000;
-        const I = 0b0000_0100;
-        const Z = 0b0000_0010;
-        const C = 0b0000_0001;
+        const N = 1 << 7;
+        const V = 1 << 6;
+        const _ = 1 << 5; // unused
+        const B = 1 << 4;
+        const D = 1 << 3;
+        const I = 1 << 2;
+        const Z = 1 << 1;
+        const C = 1;
     }
 }
 
@@ -24,11 +24,16 @@ pub struct CPU {
     pub sp: u8,
     pub status: Status,
 
+    // memory
     pub memory: Memory,
+    pub bus: Bus,
+
+    // state
+    pub cycles: usize,
 }
 
 impl CPU {
-    pub fn new() -> CPU {
+    pub fn new(bus: Bus) -> CPU {
         let mut cpu = CPU {
             a: 0,
             x: 0,
@@ -37,6 +42,8 @@ impl CPU {
             sp: 0xFD,
             status: Status::empty(),
             memory: Memory::new(),
+            cycles: 0,
+            bus,
         };
 
         cpu.status.set(Status::I, true);
@@ -55,10 +62,14 @@ impl CPU {
     }
 
     pub fn complete(&self) -> bool {
-        false
+        self.cycles == 0
     }
 
-    pub fn get_byte(&self, addr: u16) -> u8 {
-        0
+    pub fn read(&mut self, addr: u16) -> u8 {
+        self.bus.cpu_read(addr, false)
+    }
+
+    pub fn write(&mut self, addr: u16, data: u8) {
+        self.bus.cpu_write(addr, data);
     }
 }

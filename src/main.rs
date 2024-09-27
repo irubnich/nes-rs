@@ -44,7 +44,7 @@ impl Emulator {
         for _ in 0..rows {
             let mut offset = format!("${:04X}:", addr);
             for _ in 0..cols {
-                offset = format!("{} {:02X}", offset, self.cpu.get_byte(*addr));
+                offset = format!("{} {:02X}", offset, self.cpu.read(*addr));
                 *addr = *addr + 1;
             }
             olc::draw_string(ram_x, ram_y, &offset, olc::WHITE).unwrap();
@@ -226,7 +226,8 @@ fn main() {
     //     cycles: 0,
     //     clock_count: 0,
     // };
-    let cpu = CPU::new();
+    let cpu = CPU::new(bus);
+    cpu.clock();
 
     // let mut emulator = Emulator {
     //     cpu,
