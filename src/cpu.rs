@@ -20,7 +20,7 @@ bitflags! {
     pub struct Status: u8 {
         const N = 1 << 7;
         const V = 1 << 6;
-        const _ = 1 << 5; // unused
+        const U = 1 << 5; // unused
         const B = 1 << 4;
         const D = 1 << 3;
         const I = 1 << 2;
@@ -89,8 +89,10 @@ impl CPU {
         }
 
         match self.instr.op() {
-            NOP => self.nop(),
+            LDX => self.ldx(),
+            STX => self.stx(),
             JMP => self.jmp(),
+            NOP => self.nop(),
             x => panic!("unimplemented op {:?}", x)
         }
 
@@ -99,9 +101,17 @@ impl CPU {
     }
 
     pub fn reset(&mut self) {
-        self.pc = 0xFFFC;
-        self.sp = self.sp - 3;
-        self.status.set(Status::I, true);
+        self.a = 0;
+        self.x = 0;
+        self.y = 0;
+        self.sp = 0xFD;
+        self.status = Status::U.union(Status::I);
+
+        self.cycle = 0;
+
+        let lo = self.bus.cpu_read(0xFFFC, true);
+        let hi = self.bus.cpu_read(0xFFFD, true);
+        self.pc = u16::from_le_bytes([lo, hi]);
 
         // 7 cycles
         for _ in 0..7 {
@@ -169,6 +179,11 @@ impl CPU {
         } else {
             self.fetch_data();
         }
+    }
+
+    pub fn set_zn_status(&mut self, val: u8) {
+        self.status.set(Status::Z, val == 0x00);
+        self.status.set(Status::N, val & 0x80 == 0x80);
     }
 
     fn start_cycle(&mut self) {

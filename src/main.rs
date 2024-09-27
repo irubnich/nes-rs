@@ -229,8 +229,9 @@ fn main() {
     let mut cpu = CPU::new(bus);
     cpu.reset();
     cpu.pc = 0xC000;
-    cpu.clock();
-    cpu.clock();
+    for _ in 0..30 {
+        cpu.clock();
+    }
 
     // let mut emulator = Emulator {
     //     cpu,

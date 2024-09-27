@@ -95,6 +95,16 @@ impl CPU {
         self.pc = self.abs_addr;
     }
 
+    pub fn ldx(&mut self) {
+        self.fetch_data_cross();
+        self.x = self.fetched_data;
+        self.set_zn_status(self.x);
+    }
+
+    pub fn stx(&mut self) {
+        self.write(self.abs_addr, self.x);
+    }
+
     pub fn nop(&mut self) {
         self.fetch_data_cross();
     }
