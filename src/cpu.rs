@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use bitflags::bitflags;
 
 use crate::{bus::Bus, memory::Memory};
@@ -46,6 +47,7 @@ pub struct CPU {
     pub abs_addr: u16,
     pub instr: Instr,
     pub fetched_data: u8,
+    pub disasm: String,
 }
 
 impl CPU {
@@ -63,6 +65,7 @@ impl CPU {
             abs_addr: 0,
             instr: CPU::INSTRUCTIONS[0x00],
             fetched_data: 0,
+            disasm: String::with_capacity(100),
         };
 
         cpu.status.set(Status::I, true);
@@ -71,6 +74,8 @@ impl CPU {
     }
 
     pub fn clock(&mut self) -> usize {
+        self.trace_instr();
+
         let start_cycle = self.cycle;
 
         let opcode = self.read_instr();
@@ -79,11 +84,13 @@ impl CPU {
         match self.instr.addr_mode() {
             IMM => self.imm(),
             ZP0 => self.zp0(),
+            ABS => self.abs(),
             x => panic!("unimplemented addr mode {:?}", x)
         }
 
         match self.instr.op() {
             NOP => self.nop(),
+            JMP => self.jmp(),
             x => panic!("unimplemented op {:?}", x)
         }
 
@@ -95,6 +102,12 @@ impl CPU {
         self.pc = 0xFFFC;
         self.sp = self.sp - 3;
         self.status.set(Status::I, true);
+
+        // 7 cycles
+        for _ in 0..7 {
+            self.start_cycle();
+            self.end_cycle();
+        }
     }
 
     pub fn complete(&self) -> bool {
@@ -108,8 +121,14 @@ impl CPU {
         val
     }
 
+    pub fn peek(&mut self, addr: u16) -> u8 {
+        self.bus.cpu_read(addr, true)
+    }
+
     pub fn write(&mut self, addr: u16, data: u8) {
+        self.start_cycle();
         self.bus.cpu_write(addr, data);
+        self.end_cycle();
     }
 
     // read opcode and increment PC
@@ -117,6 +136,12 @@ impl CPU {
         let val = self.read(self.pc);
         self.pc = self.pc.wrapping_add(1);
         val
+    }
+
+    pub fn read_instr_u16(&mut self) -> u16 {
+        let lo = self.read_instr();
+        let hi = self.read_instr();
+        u16::from_le_bytes([lo, hi])
     }
 
     pub fn fetch_data(&mut self) {
@@ -134,7 +159,7 @@ impl CPU {
             let reg = match mode {
                 ABX => self.x,
                 ABY | IDY => self.y,
-                _ => unreachable!("not possible"),
+                _ => unreachable!("not possible")
             };
 
             // re-read data if page boundary was crossed
@@ -152,5 +177,36 @@ impl CPU {
 
     fn end_cycle(&mut self) {
         // later
+    }
+
+    fn trace_instr(&mut self) {
+        let pc = self.pc;
+        let acc = self.a;
+        let x = self.x;
+        let y = self.y;
+        let sp = self.sp;
+        let cycle = self.cycle;
+        let n = if self.status.contains(Status::N) { 'N' } else { 'n' };
+        let v = if self.status.contains(Status::V) { 'V' } else { 'v' };
+        let i = if self.status.contains(Status::I) { 'I' } else { 'i' };
+        let z = if self.status.contains(Status::Z) { 'Z' } else { 'z' };
+        let c = if self.status.contains(Status::C) { 'C' } else { 'c' };
+
+        let ppu_cycle = 0; // todo
+        let ppu_scanline= 0; // todo
+
+        println!("{:<50} A:{acc:02X} X:{x:02X} Y:{y:02X} P:{n}{v}--d{i}{z}{c} SP:{sp:02X} PPU:{ppu_cycle:3},{ppu_scanline:3} CYC:{cycle}", self.disassemble(pc));
+    }
+
+    fn disassemble(&mut self, pc: u16) -> &str {
+        self.disasm.clear();
+
+        let opcode = self.peek(pc);
+        let instr = CPU::INSTRUCTIONS[opcode as usize].op();
+
+        let _ = write!(self.disasm, "${pc:04X} ${opcode:02X} ");
+        let _ = write!(self.disasm, "        {instr:?}");
+
+        &self.disasm
     }
 }

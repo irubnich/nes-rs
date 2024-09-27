@@ -74,6 +74,10 @@ impl CPU {
     // addressing modes
     //
 
+    pub fn abs(&mut self) {
+        self.abs_addr = self.read_instr_u16();
+    }
+
     pub fn imm(&mut self) {
         self.abs_addr = self.pc;
         self.pc = self.pc.wrapping_add(1);
@@ -86,6 +90,10 @@ impl CPU {
     //
     // operations
     //
+
+    pub fn jmp(&mut self) {
+        self.pc = self.abs_addr;
+    }
 
     pub fn nop(&mut self) {
         self.fetch_data_cross();
