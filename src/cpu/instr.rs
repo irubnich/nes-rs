@@ -42,7 +42,6 @@ impl Instr {
     }
 }
 
-use bitflags::Flags;
 use AddrMode::{ABS, ABX, ABY, ACC, IDX, IDY, IMM, IMP, IND, REL, ZP0, ZPX, ZPY};
 use Operation::{
     ADC, AHX, ALR, ANC, AND, ARR, ASL, AXS, BCC, BCS, BEQ, BIT, BMI, BNE, BPL, BRK, BVC, BVS, CLC,
@@ -107,6 +106,18 @@ impl CPU {
 
     pub fn clc(&mut self) {
         self.status.set(Status::C, false);
+    }
+
+    pub fn cld(&mut self) {
+        self.status.set(Status::D, false);
+    }
+
+    pub fn sei(&mut self) {
+        self.status.set(Status::I, true);
+    }
+
+    pub fn sed(&mut self) {
+        self.status.set(Status::D, true);
     }
 
     pub fn jmp(&mut self) {
@@ -183,6 +194,36 @@ impl CPU {
         }
     }
 
+    pub fn php(&mut self) {
+        self.push((self.status | Status::U | Status::B).bits());
+    }
+
+    pub fn pha(&mut self) {
+        self.push(self.a);
+    }
+
+    pub fn pla(&mut self) {
+        let _ = self.read(Self::SP_BASE | u16::from(self.sp));
+        self.a = self.pop();
+        self.set_zn_status(self.a);
+    }
+
+    pub fn plp(&mut self) {
+        let _ = self.read(Self::SP_BASE | u16::from(self.sp));
+        self.status = Status::from_bits_truncate(self.pop());
+    }
+
+    pub fn and(&mut self) {
+        self.fetch_data_cross();
+        self.a &= self.fetched_data;
+        self.set_zn_status(self.a);
+    }
+
+    pub fn cmp(&mut self) {
+        self.fetch_data_cross();
+        self.compare(self.a, self.fetched_data);
+    }
+
     pub fn jsr(&mut self) {
         let _ = self.read(Self::SP_BASE | u16::from(self.sp));
         self.push_u16(self.pc.wrapping_sub(1));
@@ -213,5 +254,11 @@ impl CPU {
         }
 
         self.pc = self.abs_addr;
+    }
+
+    fn compare(&mut self, a: u8, b: u8) {
+        let result = a.wrapping_sub(b);
+        self.set_zn_status(result);
+        self.status.set(Status::C, a >= b);
     }
 }

@@ -17,6 +17,7 @@ use instr::{
 };
 
 bitflags! {
+    #[derive(Copy, Clone)]
     pub struct Status: u8 {
         const N = 1 << 7;
         const V = 1 << 6;
@@ -99,9 +100,14 @@ impl CPU {
             LDX => self.ldx(),
             STA => self.sta(),
             STX => self.stx(),
+            SEI => self.sei(),
+            SED => self.sed(),
+            AND => self.and(),
+            CMP => self.cmp(),
             JSR => self.jsr(),
             SEC => self.sec(),
             CLC => self.clc(),
+            CLD => self.cld(),
             BCS => self.bcs(),
             BCC => self.bcc(),
             BIT => self.bit(),
@@ -110,6 +116,10 @@ impl CPU {
             BVC => self.bvc(),
             BPL => self.bpl(),
             BNE => self.bne(),
+            PHP => self.php(),
+            PHA => self.pha(),
+            PLA => self.pla(),
+            PLP => self.plp(),
             JMP => self.jmp(),
             RTS => self.rts(),
             NOP => self.nop(),
