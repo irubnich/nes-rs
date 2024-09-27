@@ -4,10 +4,9 @@ use std::rc::Rc;
 
 use rs6502::bus::Bus;
 use rs6502::cartridge::Cartridge;
-use rs6502::cpu::CPU;
+use rs6502::cpu::{CPU, Status};
 use rs6502::memory::Memory;
 use rs6502::ppu::PPU;
-use rs6502::registers::{Registers, Status};
 use olc_pixel_game_engine as olc;
 
 struct Emulator {
@@ -23,20 +22,20 @@ struct Emulator {
 impl Emulator {
     fn draw_cpu(&self, x: i32, y: i32) {
         olc::draw_string(x, y, "STATUS", olc::WHITE).unwrap();
-        olc::draw_string(x + 80, y, "N", self.get_color(Status::PS_NEGATIVE)).unwrap();
-        olc::draw_string(x + 64, y, "V", self.get_color(Status::PS_OVERFLOW)).unwrap();
-        olc::draw_string(x + 96, y, "-", self.get_color(Status::PS_UNUSED)).unwrap();
-        olc::draw_string(x + 112, y, "B", self.get_color(Status::PS_BRK)).unwrap();
-        olc::draw_string(x + 128, y, "D", self.get_color(Status::PS_DECIMAL_MODE)).unwrap();
-        olc::draw_string(x + 144, y, "I", self.get_color(Status::PS_DISABLE_INTERRUPTS)).unwrap();
-        olc::draw_string(x + 160, y, "Z", self.get_color(Status::PS_ZERO)).unwrap();
-        olc::draw_string(x + 178, y, "C", self.get_color(Status::PS_CARRY)).unwrap();
+        olc::draw_string(x + 80, y, "N", self.get_color(Status::N)).unwrap();
+        olc::draw_string(x + 64, y, "V", self.get_color(Status::V)).unwrap();
+        olc::draw_string(x + 96, y, "-", olc::RED).unwrap();
+        olc::draw_string(x + 112, y, "B", self.get_color(Status::B)).unwrap();
+        olc::draw_string(x + 128, y, "D", self.get_color(Status::D)).unwrap();
+        olc::draw_string(x + 144, y, "I", self.get_color(Status::I)).unwrap();
+        olc::draw_string(x + 160, y, "Z", self.get_color(Status::Z)).unwrap();
+        olc::draw_string(x + 178, y, "C", self.get_color(Status::C)).unwrap();
 
-        olc::draw_string(x, y + 10, format!("PC: ${:04X}", self.cpu.registers.pc).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 20, format!("A:  ${:02X}", self.cpu.registers.a).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 30, format!("X:  ${:02X}", self.cpu.registers.x).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 40, format!("Y:  ${:02X}", self.cpu.registers.y).as_str(), olc::WHITE).unwrap();
-        olc::draw_string(x, y + 50, format!("SP: ${:02X}", self.cpu.registers.stkp.0).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 10, format!("PC: ${:04X}", self.cpu.pc).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 20, format!("A:  ${:02X}", self.cpu.a).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 30, format!("X:  ${:02X}", self.cpu.x).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 40, format!("Y:  ${:02X}", self.cpu.y).as_str(), olc::WHITE).unwrap();
+        olc::draw_string(x, y + 50, format!("SP: ${:02X}", self.cpu.sp).as_str(), olc::WHITE).unwrap();
     }
 
     fn draw_ram(&mut self, x: i32, y: i32, addr: &mut u16, rows: i32, cols: i32) {
@@ -54,7 +53,7 @@ impl Emulator {
     }
 
     fn draw_code(&self, x: i32, y: i32, lines: i32) {
-        let mut pc = self.cpu.registers.pc.clone();
+        let mut pc = self.cpu.pc.clone();
         let mut line_y = (lines >> 1) * 10 + y;
 
         match self.map_asm.get(&pc) {
@@ -76,7 +75,7 @@ impl Emulator {
             }
         }
 
-        pc = self.cpu.registers.pc.clone();
+        pc = self.cpu.pc.clone();
         line_y = (lines >> 1) * 10 + y;
         while line_y > y {
             pc = pc.wrapping_sub(1);
@@ -92,7 +91,7 @@ impl Emulator {
     }
 
     pub fn get_color(&self, s: Status) -> olc::Pixel {
-        if self.cpu.registers.status.contains(s) {
+        if self.cpu.status.contains(s) {
             olc::GREEN
         } else {
             olc::RED
@@ -118,9 +117,9 @@ impl Emulator {
 
 impl olc::Application for Emulator {
     fn on_user_create(&mut self) -> Result<(), olc::Error> {
-        self.map_asm = self.cpu.disassemble(0x0000, 0xFFFF);
+        //self.map_asm = self.cpu.disassemble(0x0000, 0xFFFF);
 
-        self.reset();
+        //self.reset();
         //self.cpu.registers.pc = 0xC000;
 
         Ok(())
@@ -222,21 +221,21 @@ fn main() {
         memory: Memory::new(),
         ppu: ppu.clone(),
     };
-    let cpu = CPU {
-        registers: Registers::new(),
-        bus,
-        cycles: 0,
-        clock_count: 0,
-    };
+    // let cpu = CPU {
+    //     bus,
+    //     cycles: 0,
+    //     clock_count: 0,
+    // };
+    let cpu = CPU::new();
 
-    let mut emulator = Emulator {
-        cpu,
-        ppu: ppu.clone(),
-        emulation_run: false,
-        residual_time: 0f32,
-        system_clock_counter: 0,
-        selected_palette: 0,
-        map_asm: HashMap::new(),
-    };
-    olc::start("nes", &mut emulator, 780, 480, 2, 2).unwrap();
+    // let mut emulator = Emulator {
+    //     cpu,
+    //     ppu: ppu.clone(),
+    //     emulation_run: false,
+    //     residual_time: 0f32,
+    //     system_clock_counter: 0,
+    //     selected_palette: 0,
+    //     map_asm: HashMap::new(),
+    // };
+    // olc::start("nes", &mut emulator, 780, 480, 2, 2).unwrap();
 }
