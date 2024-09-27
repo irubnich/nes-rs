@@ -227,8 +227,7 @@ fn main() {
     //     clock_count: 0,
     // };
     let mut cpu = CPU::new(bus);
-    let op = cpu.read_instr();
-    println!("op: {:X}", op);
+    cpu.clock();
 
     // let mut emulator = Emulator {
     //     cpu,

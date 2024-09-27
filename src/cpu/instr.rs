@@ -1,5 +1,6 @@
 use crate::cpu::CPU;
 
+#[derive(Copy, Clone, Debug)]
 pub enum AddrMode {
     IMM,
     ZP0, ZPX, ZPY,
@@ -8,6 +9,7 @@ pub enum AddrMode {
     REL, ACC, IMP,
 }
 
+#[derive(Copy, Clone, Debug)]
 pub enum Operation {
     ADC, AND, ASL, BCC, BCS, BEQ, BIT, BMI, BNE, BPL, BRK, BVC, BVS, CLC, CLD, CLI, CLV, CMP, CPX,
     CPY, DEC, DEX, DEY, EOR, INC, INX, INY, JMP, JSR, LDA, LDX, LDY, LSR, NOP, ORA, PHA, PHP, PLA,
@@ -18,7 +20,26 @@ pub enum Operation {
 }
 
 // (opcode, Addressing Mode, Operation, cycles taken)
+#[derive(Copy, Clone, Debug)]
 pub struct Instr(u8, AddrMode, Operation, usize);
+
+impl Instr {
+    pub fn opcode(&self) -> u8 {
+        self.0
+    }
+
+    pub fn addr_mode(&self) -> AddrMode {
+        self.1
+    }
+
+    pub fn op(&self) -> Operation {
+        self.2
+    }
+
+    pub fn cycles(&self) -> usize {
+        self.3
+    }
+}
 
 use AddrMode::{ABS, ABX, ABY, ACC, IDX, IDY, IMM, IMP, IND, REL, ZP0, ZPX, ZPY};
 use Operation::{
@@ -48,4 +69,25 @@ impl CPU {
         Instr(0xE0, IMM, CPX, 2), Instr(0xE1, IDX, SBC, 6), Instr(0xE2, IMM, SKB, 2), Instr(0xE3, IDX, ISB, 8), Instr(0xE4, ZP0, CPX, 3), Instr(0xE5, ZP0, SBC, 3), Instr(0xE6, ZP0, INC, 5), Instr(0xE7, ZP0, ISB, 5), Instr(0xE8, IMP, INX, 2), Instr(0xE9, IMM, SBC, 2), Instr(0xEA, IMP, NOP, 2), Instr(0xEB, IMM, SBC, 2), Instr(0xEC, ABS, CPX, 4), Instr(0xED, ABS, SBC, 4), Instr(0xEE, ABS, INC, 6), Instr(0xEF, ABS, ISB, 6),
         Instr(0xF0, REL, BEQ, 2), Instr(0xF1, IDY, SBC, 5), Instr(0xF2, IMP, XXX, 2), Instr(0xF3, IDY, ISB, 8), Instr(0xF4, ZPX, NOP, 4), Instr(0xF5, ZPX, SBC, 4), Instr(0xF6, ZPX, INC, 6), Instr(0xF7, ZPX, ISB, 6), Instr(0xF8, IMP, SED, 2), Instr(0xF9, ABY, SBC, 4), Instr(0xFA, IMP, NOP, 2), Instr(0xFB, ABY, ISB, 7), Instr(0xFC, ABX, IGN, 4), Instr(0xFD, ABX, SBC, 4), Instr(0xFE, ABX, INC, 7), Instr(0xFF, ABX, ISB, 7),
     ];
+
+    //
+    // addressing modes
+    //
+
+    pub fn imm(&mut self) {
+        self.abs_addr = self.pc;
+        self.pc = self.pc.wrapping_add(1);
+    }
+
+    pub fn zp0(&mut self) {
+        self.abs_addr = u16::from(self.read_instr());
+    }
+
+    //
+    // operations
+    //
+
+    pub fn nop(&mut self) {
+        self.fetch_data_cross();
+    }
 }
