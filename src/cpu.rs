@@ -97,13 +97,12 @@ impl CPU {
         cpu
     }
 
-    pub fn run(&mut self) {
-        while !self.complete() {
-            self.clock();
-        }
-    }
-
     pub fn clock(&mut self) -> usize {
+        if self.cycles_remaining > 0 {
+            self.cycles_remaining -= 1;
+            return 0;
+        }
+
         //self.trace_instr();
 
         let start_cycle = self.clock_count;
@@ -202,6 +201,9 @@ impl CPU {
         }
 
         let cycles_ran = self.clock_count - start_cycle;
+
+        self.cycles_remaining = cycles_ran;
+
         cycles_ran
     }
 
