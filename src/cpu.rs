@@ -232,7 +232,7 @@ impl CPU {
     }
 
     pub fn complete(&self) -> bool {
-        self.cycles_remaining == 0
+        self.cycles_remaining > 0
     }
 
     pub fn irq(&mut self) {
