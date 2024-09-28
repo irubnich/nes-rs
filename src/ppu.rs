@@ -27,6 +27,7 @@ pub struct PPU {
     status: PPUStatus,
     mask: PPUMask,
     control: PPUControl,
+    pub nmi: bool,
 
     address_latch: u8,
     ppu_data_buffer: u8,
@@ -178,6 +179,7 @@ impl PPU {
             ppu_data_buffer: 0,
             ppu_address: 0,
             addr_hi: 0,
+            nmi: false,
         };
 
         ppu
@@ -191,9 +193,6 @@ impl PPU {
                 if read_only {
                     return self.status.bits();
                 }
-
-                // hack
-                self.status.set(PPUStatus::PS_VERTICAL_BLANK, true);
 
                 let data = self.status.bits();
                 self.status.set(PPUStatus::PS_VERTICAL_BLANK, false);
@@ -323,6 +322,17 @@ impl PPU {
     }
 
     pub fn clock(&mut self) {
+        if self.scanline == -1 && self.cycle == 1 {
+            self.status.set(PPUStatus::PS_VERTICAL_BLANK, false);
+        }
+
+        if self.scanline == 241 && self.cycle == 1 {
+            self.status.set(PPUStatus::PS_VERTICAL_BLANK, true);
+            if self.control.intersects(PPUControl::PS_ENABLE_NMI) {
+                self.nmi = true;
+            }
+        }
+
         let p: u8 = rand::thread_rng().gen_range(0..=1);
         self.spr_screen.set_pixel(self.cycle - 1, self.scanline, if p == 0 { self.pal_screen[0x3F] } else { self.pal_screen[0x30] });
 

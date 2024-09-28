@@ -37,7 +37,7 @@ impl Cartridge {
 
         let n_mapper_id = (flags_6 >> 4) | (flags_7 & 0xF0);
         if n_mapper_id != 0 {
-            panic!("unsupported mapper ID {}", n_mapper_id)
+            //panic!("unsupported mapper ID {}", n_mapper_id)
         }
 
         let cart = Cartridge {
