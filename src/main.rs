@@ -209,6 +209,14 @@ impl olc::Application for Emulator {
 
         olc::draw_sprite_ext(0, 0, &self.ppu.borrow().spr_screen, 2, olc_pixel_game_engine::SpriteFlip::NONE);
 
+        for y in 0..30 {
+            for x in 0..32 {
+                //olc::draw_string(x * 16, y * 16, &format!("{:02X}", self.ppu.borrow().tbl_name[0][(y * 32 + x) as usize]), olc::WHITE).unwrap();
+                let id = self.ppu.borrow().tbl_name[0][(y * 32 + x) as usize];
+                olc::draw_partial_sprite_ext(x * 16, y * 16, self.ppu.borrow().get_pattern_table(1), i32::from(id & 0x0F) << 3, i32::from((id >> 4) & 0x0F) << 3, 8, 8, 2, olc::SpriteFlip::NONE);
+            }
+        }
+
         Ok(())
     }
 
@@ -218,7 +226,7 @@ impl olc::Application for Emulator {
 }
 
 fn main() {
-    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("nestest.nes"))));
+    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("dk.nes"))));
 
     let ppu = Rc::new(RefCell::new(PPU::new(cartridge.clone())));
 

@@ -7,11 +7,18 @@ use nom::error::Error;
 
 use crate::mapper::Mapper;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Mirror {
+    VERTICAL,
+    HORIZONTAL,
+}
+
 #[derive(Debug, Clone)]
 pub struct Cartridge {
     v_prg_memory: Vec<u8>,
     v_chr_memory: Vec<u8>,
     mapper: Mapper,
+    pub mirror: Mirror,
 }
 
 impl Cartridge {
@@ -26,11 +33,11 @@ impl Cartridge {
         let (i, _) = tag::<&[u8; 4], &[u8], Error<&[u8]>>(b"NES\x1A")(i).expect("nes");
         let (i, prg_banks) = u8::<&[u8], Error<&[u8]>>(i).expect("prg_banks");
         let (i, chr_banks) = u8::<&[u8], Error<&[u8]>>(i).expect("chr_banks");
-        let (i, flags_6) = u8::<&[u8], Error<&[u8]>>(i).expect("flags_6");
-        let (i, flags_7) = u8::<&[u8], Error<&[u8]>>(i).expect("flags_7");
+        let (i, flags_6) = u8::<&[u8], Error<&[u8]>>(i).expect("flags_6"); // mapper1
+        let (i, flags_7) = u8::<&[u8], Error<&[u8]>>(i).expect("flags_7"); // mapper2
         let (i, _size_prg_ram) = u8::<&[u8], Error<&[u8]>>(i).expect("size_prg_ram");
-        let (i, _flags_9) = u8::<&[u8], Error<&[u8]>>(i).expect("_flags_9");
-        let (i, _flags_10) = u8::<&[u8], Error<&[u8]>>(i).expect("_flags_11");
+        let (i, _flags_9) = u8::<&[u8], Error<&[u8]>>(i).expect("_flags_9"); // tv_system1
+        let (i, _flags_10) = u8::<&[u8], Error<&[u8]>>(i).expect("_flags_11"); // tv_system2
         let (i, _) = take::<usize, &[u8], Error<&[u8]>>(5usize)(i).expect("unused");
         let (i, prg) = take::<usize, &[u8], Error<&[u8]>>(0x4000 * prg_banks as usize)(i).expect("prg");
         let (i, chr) = take::<usize, &[u8], Error<&[u8]>>(0x2000 * chr_banks as usize)(i).expect("chr");
@@ -39,11 +46,13 @@ impl Cartridge {
         if n_mapper_id != 0 {
             //panic!("unsupported mapper ID {}", n_mapper_id)
         }
+        let mirror = if flags_6 & 0x01 > 0 { Mirror::VERTICAL } else { Mirror::HORIZONTAL };
 
         let cart = Cartridge {
             v_prg_memory: prg.to_vec(),
             v_chr_memory: chr.to_vec(),
             mapper: Mapper::new(prg_banks, chr_banks),
+            mirror,
         };
 
         Ok((i, cart))

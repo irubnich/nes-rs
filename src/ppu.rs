@@ -4,11 +4,11 @@ use bitflags::bitflags;
 use olc_pixel_game_engine as olc;
 use rand::Rng;
 
-use crate::cartridge::Cartridge;
+use crate::cartridge::{Cartridge, Mirror};
 
 #[derive(Debug)]
 pub struct PPU {
-    //tbl_name: [[u8; 1024]; 2],
+    pub tbl_name: [[u8; 1024]; 2],
     tbl_pattern: [[u8; 4096]; 2],
     tbl_palette: [u8; 32],
 
@@ -154,6 +154,7 @@ impl PPU {
         let ppu = PPU {
             pal_screen,
 
+            tbl_name: [[0; 1024]; 2],
             tbl_pattern: [[0; 4096]; 2],
             tbl_palette: [0; 32],
 
@@ -215,7 +216,7 @@ impl PPU {
                     return self.ppu_data_buffer;
                 }
 
-                self.ppu_address += 1;
+                self.ppu_address += if self.control.intersects(PPUControl::PS_INCREMENT_MODE) { 32 } else { 1 };
 
                 data
             },
@@ -247,7 +248,7 @@ impl PPU {
             },
             0x0007 => {
                 self.ppu_write(self.ppu_address, data);
-                self.ppu_address += 1;
+                self.ppu_address += if self.control.intersects(PPUControl::PS_INCREMENT_MODE) { 32 } else { 1 };
             },
             _ => panic!("invalid CPU write from PPU")
         }
@@ -264,8 +265,27 @@ impl PPU {
 
             return self.tbl_pattern[idx1 as usize][idx2 as usize];
         } else if addr >= 0x2000 && addr <= 0x3EFF {
-            // TODO
-            return 0x00;
+            let idx = (addr & 0x03FF) as usize;
+
+            if self.cart.borrow().mirror == Mirror::VERTICAL {
+                match addr {
+                    0x0000..=0x03FF => self.tbl_name[0][idx],
+                    0x0400..=0x07FF => self.tbl_name[1][idx],
+                    0x0800..=0x0BFF => self.tbl_name[0][idx],
+                    0x0C00..=0x0FFF => self.tbl_name[1][idx],
+                    _ => panic!("invalid nametable read 1"),
+                }
+            } else if self.cart.borrow().mirror == Mirror::HORIZONTAL {
+                match addr {
+                    0x0000..=0x03FF => self.tbl_name[0][idx],
+                    0x0400..=0x07FF => self.tbl_name[0][idx],
+                    0x0800..=0x0BFF => self.tbl_name[1][idx],
+                    0x0C00..=0x0FFF => self.tbl_name[1][idx],
+                    _ => panic!("invalid nametable read 2"),
+                }
+            } else {
+                panic!("invalid mirroring read");
+            }
         } else if addr >= 0x3F00 && addr <= 0x3FFF {
             let mut addr = addr & 0x001F;
             if addr == 0x0010 { addr = 0x0000 };
@@ -290,14 +310,28 @@ impl PPU {
 
             self.tbl_pattern[idx1 as usize][idx2 as usize] = data;
         } else if addr >= 0x2000 && addr <= 0x3EFF {
-            // this works... why
-            // let mut addr = addr & 0x001F;
-            // if addr == 0x0010 { addr = 0x0000 };
-            // if addr == 0x0014 { addr = 0x0004 };
-            // if addr == 0x0018 { addr = 0x0008 };
-            // if addr == 0x001C { addr = 0x000C };
+            let addr = addr & 0x0FFF;
+            let idx = (addr & 0x03FF) as usize;
 
-            // self.tbl_palette[addr as usize] = data;
+            if self.cart.borrow().mirror == Mirror::VERTICAL {
+                match addr {
+                    0x0000..=0x03FF => self.tbl_name[0][idx] = data,
+                    0x0400..=0x07FF => self.tbl_name[1][idx] = data,
+                    0x0800..=0x0BFF => self.tbl_name[0][idx] = data,
+                    0x0C00..=0x0FFF => self.tbl_name[1][idx] = data,
+                    _ => panic!("invalid nametable write 1"),
+                }
+            } else if self.cart.borrow().mirror == Mirror::HORIZONTAL {
+                match addr {
+                    0x0000..=0x03FF => self.tbl_name[0][idx] = data,
+                    0x0400..=0x07FF => self.tbl_name[0][idx] = data,
+                    0x0800..=0x0BFF => self.tbl_name[1][idx] = data,
+                    0x0C00..=0x0FFF => self.tbl_name[1][idx] = data,
+                    _ => panic!("invalid nametable write 2"),
+                }
+            } else {
+                panic!("invalid mirroring write");
+            }
         } else if addr >= 0x3F00 && addr <= 0x3FFF {
             let mut addr = addr & 0x001F;
             if addr == 0x0010 { addr = 0x0000 };
@@ -333,8 +367,9 @@ impl PPU {
             }
         }
 
-        let p: u8 = rand::thread_rng().gen_range(0..=1);
-        self.spr_screen.set_pixel(self.cycle - 1, self.scanline, if p == 0 { self.pal_screen[0x3F] } else { self.pal_screen[0x30] });
+        // noise
+        // let p: u8 = rand::thread_rng().gen_range(0..=1);
+        // self.spr_screen.set_pixel(self.cycle - 1, self.scanline, if p == 0 { self.pal_screen[0x3F] } else { self.pal_screen[0x30] });
 
         self.cycle += 1;
         if self.cycle >= 341 {
