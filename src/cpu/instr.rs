@@ -194,6 +194,12 @@ impl CPU {
         }
     }
 
+    pub fn bmi(&mut self) {
+        if self.status.intersects(Status::N) {
+            self.branch();
+        }
+    }
+
     pub fn php(&mut self) {
         self.push((self.status | Status::U | Status::B).bits());
     }

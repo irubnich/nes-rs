@@ -116,6 +116,7 @@ impl CPU {
             BVC => self.bvc(),
             BPL => self.bpl(),
             BNE => self.bne(),
+            BMI => self.bmi(),
             PHP => self.php(),
             PHA => self.pha(),
             PLA => self.pla(),
@@ -253,7 +254,7 @@ impl CPU {
         let y = self.y;
         let sp = self.sp;
         let cycle = self.cycle;
-        let st = self.status.bits();
+        let st = self.status | Status::U; // always set unused
 
         let ppu_cycle = 0; // todo
         let ppu_scanline= 0; // todo
