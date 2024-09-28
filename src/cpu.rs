@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::{fmt::Write, ops::Sub};
 use bitflags::bitflags;
 
 use crate::{bus::Bus, memory::Memory};
@@ -92,22 +92,56 @@ impl CPU {
             REL => self.rel(),
             ZP0 => self.zp0(),
             ABS => self.abs(),
+            ACC => self.acc(),
+            IDX => self.idx(),
+            IDY => self.idy(),
+            IND => self.ind(),
+            ABX => self.abx(),
+            ABY => self.aby(),
+            ZPX => self.zpx(),
+            ZPY => self.zpy(),
             x => panic!("unimplemented addr mode {:?}", x)
         }
 
         match self.instr.op() {
             LDA => self.lda(),
             LDX => self.ldx(),
+            LDY => self.ldy(),
             STA => self.sta(),
             STX => self.stx(),
+            STY => self.sty(),
             SEI => self.sei(),
             SED => self.sed(),
             AND => self.and(),
+            ORA => self.ora(),
+            EOR => self.eor(),
+            ADC => self.adc(),
             CMP => self.cmp(),
+            CPY => self.cpy(),
+            CPX => self.cpx(),
             JSR => self.jsr(),
             SEC => self.sec(),
+            SBC => self.sbc(),
+            INC => self.inc(),
+            DEC => self.dec(),
+            INY => self.iny(),
+            INX => self.inx(),
+            DEY => self.dey(),
+            DEX => self.dex(),
+            TAY => self.tay(),
+            TAX => self.tax(),
+            TYA => self.tya(),
+            TXA => self.txa(),
+            TSX => self.tsx(),
+            TXS => self.txs(),
+            RTI => self.rti(),
+            LSR => self.lsr(),
+            ASL => self.asl(),
+            ROR => self.ror(),
+            ROL => self.rol(),
             CLC => self.clc(),
             CLD => self.cld(),
+            CLV => self.clv(),
             BCS => self.bcs(),
             BCC => self.bcc(),
             BIT => self.bit(),
@@ -123,6 +157,16 @@ impl CPU {
             PLP => self.plp(),
             JMP => self.jmp(),
             RTS => self.rts(),
+            SKB => self.skb(),
+            IGN => self.ign(),
+            LAX => self.lax(),
+            SAX => self.sax(),
+            DCP => self.dcp(),
+            ISB => self.isb(),
+            SLO => self.slo(),
+            RLA => self.rla(),
+            SRE => self.sre(),
+            RRA => self.rra(),
             NOP => self.nop(),
             x => panic!("unimplemented op {:?}", x)
         }
@@ -166,10 +210,30 @@ impl CPU {
         self.bus.cpu_read(addr, true)
     }
 
+    pub fn read_u16(&mut self, addr: u16) -> u16 {
+        let lo = self.read(addr);
+        let hi = self.read(addr.wrapping_add(1));
+        u16::from_le_bytes([lo, hi])
+    }
+
+    pub fn read_zp_u16(&mut self, addr: u8) -> u16 {
+        let lo = self.read(addr.into());
+        let hi = self.read(addr.wrapping_add(1).into());
+        u16::from_le_bytes([lo, hi])
+    }
+
     pub fn write(&mut self, addr: u16, data: u8) {
         self.start_cycle();
         self.bus.cpu_write(addr, data);
         self.end_cycle();
+    }
+
+    fn write_fetched(&mut self, val: u8) {
+        match self.instr.addr_mode() {
+            IMP | ACC => self.a = val,
+            IMM => (),
+            _ => self.write(self.abs_addr, val),
+        }
     }
 
     // read opcode and increment PC
@@ -254,7 +318,7 @@ impl CPU {
         let y = self.y;
         let sp = self.sp;
         let cycle = self.cycle;
-        let st = self.status | Status::U; // always set unused
+        let st = (self.status | Status::U).sub(Status::B); // remove U and B
 
         let ppu_cycle = 0; // todo
         let ppu_scanline= 0; // todo
@@ -276,5 +340,9 @@ impl CPU {
 
     fn pages_differ(addr1: u16, addr2: u16) -> bool {
         (addr1 & 0xFF00) != (addr2 & 0xFF00)
+    }
+
+    fn status_bit(&self, reg: Status) -> u8 {
+        self.status.intersection(reg).bits()
     }
 }

@@ -229,7 +229,7 @@ fn main() {
     let mut cpu = CPU::new(bus);
     cpu.reset();
     cpu.pc = 0xC000;
-    for _ in 0..300 {
+    for _ in 0..30000 {
         cpu.clock();
     }
 

@@ -1,7 +1,7 @@
 use crate::cpu::Status;
 use crate::cpu::CPU;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum AddrMode {
     IMM,
     ZP0, ZPX, ZPY,
@@ -96,6 +96,60 @@ impl CPU {
         self.abs_addr = u16::from(self.read_instr());
     }
 
+    pub fn acc(&mut self) {
+        let _ = self.read(self.pc);
+    }
+
+    pub fn idx(&mut self) {
+        let addr = self.read_instr();
+        let _ = self.read(u16::from(addr));
+        let addr = addr.wrapping_add(self.x);
+        self.abs_addr = self.read_zp_u16(addr);
+    }
+
+    pub fn idy(&mut self) {
+        let addr = self.read_instr();
+        let addr = self.read_zp_u16(addr);
+        self.abs_addr = addr.wrapping_add(self.y.into());
+        self.fetched_data = self.read((addr & 0xFF00) | (self.abs_addr & 0x00FF));
+    }
+
+    pub fn ind(&mut self) {
+        let addr = self.read_instr_u16();
+        if addr & 0xFF == 0xFF {
+            // buggy indirect
+            let lo = self.read(addr);
+            let hi = self.read(addr & 0xFF00);
+            self.abs_addr = u16::from_le_bytes([lo, hi])
+        } else {
+            self.abs_addr = self.read_u16(addr);
+        }
+    }
+
+    pub fn abx(&mut self) {
+        let addr = self.read_instr_u16();
+        self.abs_addr = addr.wrapping_add(self.x.into());
+        self.fetched_data = self.read((addr & 0xFF00) | (self.abs_addr & 0x00FF));
+    }
+
+    pub fn aby(&mut self) {
+        let addr = self.read_instr_u16();
+        self.abs_addr = addr.wrapping_add(self.y.into());
+        self.fetched_data = self.read((addr & 0xFF00) | (self.abs_addr & 0x00FF));
+    }
+
+    pub fn zpx(&mut self) {
+        let addr = u16::from(self.read_instr());
+        let _ = self.read(addr);
+        self.abs_addr = addr.wrapping_add(self.x.into()) & 0x00FF;
+    }
+
+    pub fn zpy(&mut self) {
+        let addr = u16::from(self.read_instr());
+        let _ = self.read(addr);
+        self.abs_addr = addr.wrapping_add(self.y.into()) & 0x00FF;
+    }
+
     //
     // operations
     //
@@ -110,6 +164,10 @@ impl CPU {
 
     pub fn cld(&mut self) {
         self.status.set(Status::D, false);
+    }
+
+    pub fn clv(&mut self) {
+        self.status.set(Status::V, false);
     }
 
     pub fn sei(&mut self) {
@@ -136,12 +194,22 @@ impl CPU {
         self.set_zn_status(self.x);
     }
 
+    pub fn ldy(&mut self) {
+        self.fetch_data_cross();
+        self.y = self.fetched_data;
+        self.set_zn_status(self.y);
+    }
+
     pub fn sta(&mut self) {
         self.write(self.abs_addr, self.a);
     }
 
     pub fn stx(&mut self) {
         self.write(self.abs_addr, self.x);
+    }
+
+    pub fn sty(&mut self) {
+        self.write(self.abs_addr, self.y);
     }
 
     pub fn bit(&mut self) {
@@ -200,6 +268,74 @@ impl CPU {
         }
     }
 
+    pub fn ora(&mut self) {
+        self.fetch_data_cross();
+        self.a |= self.fetched_data;
+        self.set_zn_status(self.a);
+    }
+
+    pub fn eor(&mut self) {
+        self.fetch_data_cross();
+        self.a ^= self.fetched_data;
+        self.set_zn_status(self.a);
+    }
+
+    pub fn adc(&mut self) {
+        self.fetch_data_cross();
+        let a = self.a;
+        let (x1, o1) = self.fetched_data.overflowing_add(a);
+        let (x2, o2) = x1.overflowing_add(self.status_bit(Status::C));
+        self.a = x2;
+        self.status.set(Status::C, o1 | o2);
+        self.status.set(
+            Status::V,
+            (a ^ self.fetched_data) & 0x80 == 0 && (a ^ self.a) & 0x80 != 0,
+        );
+        self.set_zn_status(self.a);
+    }
+
+    pub fn lsr(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        self.status.set(Status::C, self.fetched_data & 1 > 0);
+        let val = self.fetched_data.wrapping_shr(1);
+        self.set_zn_status(val);
+        self.write_fetched(val);
+    }
+
+    pub fn asl(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        self.status.set(Status::C, (self.fetched_data >> 7) & 1 > 0);
+        let val = self.fetched_data.wrapping_shl(1);
+        self.set_zn_status(val);
+        self.write_fetched(val);
+    }
+
+    pub fn ror(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        let mut ret = self.fetched_data.rotate_right(1);
+        if self.status.intersects(Status::C) {
+            ret |= 1 << 7;
+        } else {
+            ret &= !(1 << 7);
+        }
+        self.status.set(Status::C, self.fetched_data & 1 > 0);
+        self.set_zn_status(ret);
+        self.write_fetched(ret);
+    }
+
+    pub fn rol(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        let old_c = self.status_bit(Status::C);
+        self.status.set(Status::C, (self.fetched_data >> 7) & 1 > 0);
+        let val = (self.fetched_data << 1) | old_c;
+        self.set_zn_status(val);
+        self.write_fetched(val);
+    }
+
     pub fn php(&mut self) {
         self.push((self.status | Status::U | Status::B).bits());
     }
@@ -216,7 +352,7 @@ impl CPU {
 
     pub fn plp(&mut self) {
         let _ = self.read(Self::SP_BASE | u16::from(self.sp));
-        self.status = Status::from_bits_truncate(self.pop());
+        self.status = Status::from_bits_truncate(self.pop()).difference(Status::U);
     }
 
     pub fn and(&mut self) {
@@ -228,6 +364,16 @@ impl CPU {
     pub fn cmp(&mut self) {
         self.fetch_data_cross();
         self.compare(self.a, self.fetched_data);
+    }
+
+    pub fn cpy(&mut self) {
+        self.fetch_data();
+        self.compare(self.y, self.fetched_data);
+    }
+
+    pub fn cpx(&mut self) {
+        self.fetch_data();
+        self.compare(self.x, self.fetched_data);
     }
 
     pub fn jsr(&mut self) {
@@ -242,8 +388,195 @@ impl CPU {
         let _ = self.read(self.pc);
     }
 
+    pub fn sbc(&mut self) {
+        self.fetch_data_cross();
+        let a = self.a;
+        let (x1, o1) = a.overflowing_sub(self.fetched_data);
+        let (x2, o2) = x1.overflowing_sub(1 - self.status_bit(Status::C));
+        self.a = x2;
+        self.status.set(Status::C, !(o1 | o2));
+        self.status.set(
+            Status::V,
+            (a ^ self.fetched_data) & 0x80 != 0 && (a ^ self.a) & 0x80 != 0,
+        );
+        self.set_zn_status(self.a);
+    }
+
+    pub fn inc(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        let val = self.fetched_data.wrapping_add(1);
+        self.set_zn_status(val);
+        self.write_fetched(val);
+    }
+
+    pub fn dec(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        let val = self.fetched_data.wrapping_sub(1);
+        self.set_zn_status(val);
+        self.write_fetched(val);
+    }
+
+    pub fn iny(&mut self) {
+        self.y = self.y.wrapping_add(1);
+        self.set_zn_status(self.y);
+    }
+
+    pub fn inx(&mut self) {
+        self.x = self.x.wrapping_add(1);
+        self.set_zn_status(self.x);
+    }
+
+    pub fn dey(&mut self) {
+        self.y = self.y.wrapping_sub(1);
+        self.set_zn_status(self.y);
+    }
+
+    pub fn dex(&mut self) {
+        self.x = self.x.wrapping_sub(1);
+        self.set_zn_status(self.x);
+    }
+
+    pub fn tay(&mut self) {
+        self.y = self.a;
+        self.set_zn_status(self.y);
+    }
+
+    pub fn tax(&mut self) {
+        self.x = self.a;
+        self.set_zn_status(self.x);
+    }
+
+    pub fn tya(&mut self) {
+        self.a = self.y;
+        self.set_zn_status(self.a);
+    }
+
+    pub fn txa(&mut self) {
+        self.a = self.x;
+        self.set_zn_status(self.a);
+    }
+
+    pub fn tsx(&mut self) {
+        self.x = self.sp;
+        self.set_zn_status(self.x);
+    }
+
+    pub fn txs(&mut self) {
+        self.sp = self.x;
+    }
+
+    pub fn rti(&mut self) {
+        let _ = self.read(Self::SP_BASE | u16::from(self.sp));
+        self.status = Status::from_bits_truncate(self.pop());
+        self.status &= !Status::U;
+        self.status &= !Status::B;
+        self.pc = self.pop_u16();
+    }
+
     pub fn nop(&mut self) {
         self.fetch_data_cross();
+    }
+
+    pub fn skb(&mut self) {
+        self.fetch_data();
+    }
+
+    pub fn ign(&mut self) {
+        self.fetch_data_cross();
+    }
+
+    pub fn lax(&mut self) {
+        self.lda();
+        self.tax();
+    }
+
+    pub fn sax(&mut self) {
+        if self.instr.addr_mode() == IDY {
+            self.fetch_data();
+        }
+        let val = self.a & self.x;
+        self.write_fetched(val);
+    }
+
+    pub fn dcp(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        let val = self.fetched_data.wrapping_sub(1);
+        self.compare(self.a, val);
+        self.write_fetched(val);
+    }
+
+    pub fn isb(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        let val = self.fetched_data.wrapping_add(1);
+        let a = self.a;
+        let (x1, o1) = a.overflowing_sub(val);
+        let (x2, o2) = x1.overflowing_sub(1 - self.status_bit(Status::C));
+        self.a = x2;
+        self.status.set(Status::C, !(o1 | o2));
+        self.status.set(
+            Status::V,
+            (a ^ val) & 0x80 != 0 && (a ^ self.a) & 0x80 != 0,
+        );
+        self.set_zn_status(self.a);
+        self.write_fetched(val);
+    }
+
+    pub fn slo(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        self.status.set(Status::C, (self.fetched_data >> 7) & 1 > 0);
+        let val = self.fetched_data.wrapping_shl(1);
+        self.write_fetched(val);
+        self.a |= val;
+        self.set_zn_status(self.a);
+    }
+
+    pub fn rla(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        let old_c = self.status_bit(Status::C);
+        self.status.set(Status::C, (self.fetched_data >> 7) & 1 > 0);
+        let val = (self.fetched_data << 1) | old_c;
+        self.a &= val;
+        self.set_zn_status(self.a);
+        self.write_fetched(val);
+    }
+
+    pub fn sre(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        self.status.set(Status::C, self.fetched_data & 1 > 0);
+        let val = self.fetched_data.wrapping_shr(1);
+        self.a ^= val;
+        self.set_zn_status(self.a);
+        self.write_fetched(val);
+    }
+
+    pub fn rra(&mut self) {
+        self.fetch_data();
+        self.write_fetched(self.fetched_data);
+        let mut ret = self.fetched_data.rotate_right(1);
+        if self.status.intersects(Status::C) {
+            ret |= 1 << 7;
+        } else {
+            ret &= !(1 << 7);
+        }
+        self.status.set(Status::C, self.fetched_data & 1 > 0);
+        let a = self.a;
+        let (x1, o1) = ret.overflowing_add(a);
+        let (x2, o2) = x1.overflowing_add(self.status_bit(Status::C));
+        self.a = x2;
+        self.status.set(Status::C, o1 | o2);
+        self.status.set(
+            Status::V,
+            (a ^ ret) & 0x80 == 0 && (a ^ self.a) & 0x80 != 0,
+        );
+        self.set_zn_status(self.a);
+        self.write_fetched(ret);
     }
 
     fn branch(&mut self) {
