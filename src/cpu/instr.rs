@@ -579,6 +579,37 @@ impl CPU {
         self.write_fetched(ret);
     }
 
+    pub fn brk(&mut self) {
+        self.fetch_data();
+        self.push_u16(self.pc);
+
+        let status = (self.status | Status::U | Status::B).bits();
+
+        if self.nmi {
+            self.nmi = false;
+            self.push(status);
+            self.status.set(Status::I, true);
+
+            self.pc = self.read_u16(Self::NMI_VECTOR);
+            println!("NMI");
+        } else {
+            self.push(status);
+            self.status.set(Status::I, true);
+
+            self.pc = self.read_u16(Self::IRQ_VECTOR);
+            println!("IRQ");
+        }
+
+        println!("suppress nmi after brk?");
+
+        self.prev_nmi = false;
+    }
+
+    pub fn xxx(&mut self) {
+        self.corrupted = true;
+        panic!("corrupted");
+    }
+
     fn branch(&mut self) {
         self.read(self.pc);
 

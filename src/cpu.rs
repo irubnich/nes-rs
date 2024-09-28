@@ -50,10 +50,19 @@ pub struct CPU {
     pub instr: Instr,
     pub fetched_data: u8,
     pub disasm: String,
+
+    // interrupts
+    pub nmi: bool,
+    pub prev_nmi: bool,
+
+    // misc
+    pub corrupted: bool,
 }
 
 impl CPU {
     const SP_BASE: u16 = 0x0100;
+    const NMI_VECTOR: u16 = 0xFFFA;
+    const IRQ_VECTOR: u16 = 0xFFFE;
 
     pub fn new(bus: Bus) -> CPU {
         let mut cpu = CPU {
@@ -71,6 +80,9 @@ impl CPU {
             instr: CPU::INSTRUCTIONS[0x00],
             fetched_data: 0,
             disasm: String::with_capacity(100),
+            nmi: false,
+            prev_nmi: false,
+            corrupted: false,
         };
 
         cpu.status.set(Status::I, true);
@@ -167,7 +179,9 @@ impl CPU {
             RLA => self.rla(),
             SRE => self.sre(),
             RRA => self.rra(),
+            BRK => self.brk(),
             NOP => self.nop(),
+            XXX => self.xxx(),
             x => panic!("unimplemented op {:?}", x)
         }
 
@@ -183,6 +197,8 @@ impl CPU {
         self.status = Status::U.union(Status::I);
 
         self.cycle = 0;
+        self.nmi = false;
+        self.prev_nmi = false;
 
         let lo = self.bus.cpu_read(0xFFFC, true);
         let hi = self.bus.cpu_read(0xFFFD, true);
