@@ -44,7 +44,8 @@ pub struct CPU {
     pub bus: Bus,
 
     // state
-    pub cycle: usize,
+    pub clock_count: usize,
+    pub cycles_remaining: usize,
     pub abs_addr: u16,
     pub rel_addr: u16,
     pub instr: Instr,
@@ -52,6 +53,7 @@ pub struct CPU {
     pub disasm: String,
 
     // interrupts
+    pub prev_run_irq: bool,
     pub nmi: bool,
     pub prev_nmi: bool,
 
@@ -73,7 +75,8 @@ impl CPU {
             sp: 0xFD,
             status: Status::empty(),
             memory: Memory::new(),
-            cycle: 0,
+            clock_count: 0,
+            cycles_remaining: 0,
             bus,
             abs_addr: 0,
             rel_addr: 0,
@@ -82,6 +85,7 @@ impl CPU {
             disasm: String::with_capacity(100),
             nmi: false,
             prev_nmi: false,
+            prev_run_irq: false,
             corrupted: false,
         };
 
@@ -90,10 +94,16 @@ impl CPU {
         cpu
     }
 
-    pub fn clock(&mut self) -> usize {
-        self.trace_instr();
+    pub fn run(&mut self) {
+        while !self.complete() {
+            self.clock();
+        }
+    }
 
-        let start_cycle = self.cycle;
+    pub fn clock(&mut self) -> usize {
+        //self.trace_instr();
+
+        let start_cycle = self.clock_count;
 
         let opcode = self.read_instr();
         self.instr = CPU::INSTRUCTIONS[opcode as usize];
@@ -185,7 +195,11 @@ impl CPU {
             x => panic!("unimplemented op {:?}", x)
         }
 
-        let cycles_ran = self.cycle - start_cycle;
+        if self.prev_run_irq || self.prev_nmi {
+            self.irq();
+        }
+
+        let cycles_ran = self.clock_count - start_cycle;
         cycles_ran
     }
 
@@ -196,7 +210,9 @@ impl CPU {
         self.sp = 0xFD;
         self.status = Status::U.union(Status::I);
 
-        self.cycle = 0;
+        self.clock_count = 0;
+        self.cycles_remaining = 0;
+        self.prev_run_irq = false;
         self.nmi = false;
         self.prev_nmi = false;
 
@@ -212,7 +228,28 @@ impl CPU {
     }
 
     pub fn complete(&self) -> bool {
-        self.cycle == 0
+        self.cycles_remaining == 0
+    }
+
+    pub fn irq(&mut self) {
+        self.read(self.pc);
+        self.read(self.pc);
+        self.push_u16(self.pc);
+
+        let status = ((self.status | Status::U) & !Status::B).bits();
+
+        if self.nmi {
+            self.nmi = false;
+            self.push(status);
+            self.status.set(Status::I, true);
+
+            self.pc = self.read_u16(Self::NMI_VECTOR);
+        } else {
+            self.push(status);
+            self.status.set(Status::I, true);
+
+            self.pc = self.read_u16(Self::IRQ_VECTOR);
+        }
     }
 
     pub fn read(&mut self, addr: u16) -> u8 {
@@ -320,7 +357,7 @@ impl CPU {
     }
 
     fn start_cycle(&mut self) {
-        self.cycle = self.cycle.wrapping_add(1);
+        self.clock_count = self.clock_count.wrapping_add(1);
     }
 
     fn end_cycle(&mut self) {
@@ -333,7 +370,7 @@ impl CPU {
         let x = self.x;
         let y = self.y;
         let sp = self.sp;
-        let cycle = self.cycle;
+        let cycle = self.clock_count;
         let st = (self.status | Status::U).sub(Status::B); // remove U and B
 
         let ppu_cycle = 0; // todo

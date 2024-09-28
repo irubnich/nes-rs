@@ -119,8 +119,8 @@ impl olc::Application for Emulator {
     fn on_user_create(&mut self) -> Result<(), olc::Error> {
         //self.map_asm = self.cpu.disassemble(0x0000, 0xFFFF);
 
-        //self.reset();
-        //self.cpu.registers.pc = 0xC000;
+        self.reset();
+        //self.cpu.pc = 0xC000;
 
         Ok(())
     }
@@ -183,7 +183,7 @@ impl olc::Application for Emulator {
         }
 
         self.draw_cpu(516, 2);
-        self.draw_code(516, 72, 26);
+        //self.draw_code(516, 72, 26);
         //self.draw_ram(516, 100, &mut 0x0000, 16, 16);
         //self.draw_ram(516, 300, &mut 0x8000, 16, 16);
 
@@ -221,26 +221,15 @@ fn main() {
         memory: Memory::new(),
         ppu: ppu.clone(),
     };
-    // let cpu = CPU {
-    //     bus,
-    //     cycles: 0,
-    //     clock_count: 0,
-    // };
-    let mut cpu = CPU::new(bus);
-    cpu.reset();
-    cpu.pc = 0xC000;
-    for _ in 0..30000 {
-        cpu.clock();
-    }
-
-    // let mut emulator = Emulator {
-    //     cpu,
-    //     ppu: ppu.clone(),
-    //     emulation_run: false,
-    //     residual_time: 0f32,
-    //     system_clock_counter: 0,
-    //     selected_palette: 0,
-    //     map_asm: HashMap::new(),
-    // };
-    // olc::start("nes", &mut emulator, 780, 480, 2, 2).unwrap();
+    let cpu = CPU::new(bus);
+    let mut emulator = Emulator {
+        cpu,
+        ppu: ppu.clone(),
+        emulation_run: false,
+        residual_time: 0f32,
+        system_clock_counter: 0,
+        selected_palette: 0,
+        map_asm: HashMap::new(),
+    };
+    olc::start("nes", &mut emulator, 780, 480, 2, 2).unwrap();
 }

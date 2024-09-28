@@ -243,12 +243,10 @@ impl PPU {
                 } else {
                     let lo = data;
                     self.ppu_address = u16::from(self.addr_hi) << 8 | u16::from(lo);
-                    println!("setting ppu address = {:04X}", self.ppu_address);
                     self.address_latch = 0;
                 }
             },
             0x0007 => {
-                //println!("[ppu] set {:04X} = {:02X}", self.ppu_address, data);
                 self.ppu_write(self.ppu_address, data);
                 self.ppu_address += 1;
             },
@@ -371,11 +369,6 @@ impl PPU {
 
     pub fn get_color_from_palette_ram(&self, palette: u8, pixel: u8) -> olc::Pixel {
         let idx = self.ppu_read(0x3F00 + (u16::from(palette) * 4) + u16::from(pixel));
-
-        if idx != 0 {
-            println!("requesting palette data from {:02X}", idx as usize & 0x3F);
-        }
-
         self.pal_screen[idx as usize & 0x3F]
     }
 }
