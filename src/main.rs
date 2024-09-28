@@ -16,7 +16,7 @@ struct Emulator {
     residual_time: f32,
     system_clock_counter: i32,
     selected_palette: u8,
-    map_asm: HashMap<u16, String>,
+    _map_asm: HashMap<u16, String>,
 }
 
 impl Emulator {
@@ -38,7 +38,7 @@ impl Emulator {
         olc::draw_string(x, y + 50, format!("SP: ${:02X}", self.cpu.sp).as_str(), olc::WHITE).unwrap();
     }
 
-    fn draw_ram(&mut self, x: i32, y: i32, addr: &mut u16, rows: i32, cols: i32) {
+    fn _draw_ram(&mut self, x: i32, y: i32, addr: &mut u16, rows: i32, cols: i32) {
         let ram_x = x;
         let mut ram_y = y;
         for _ in 0..rows {
@@ -52,11 +52,11 @@ impl Emulator {
         }
     }
 
-    fn draw_code(&self, x: i32, y: i32, lines: i32) {
+    fn _draw_code(&self, x: i32, y: i32, lines: i32) {
         let mut pc = self.cpu.pc.clone();
         let mut line_y = (lines >> 1) * 10 + y;
 
-        match self.map_asm.get(&pc) {
+        match self._map_asm.get(&pc) {
             Some(line) => {
                 olc::draw_string(x, line_y, line, olc::CYAN).unwrap();
             }
@@ -66,7 +66,7 @@ impl Emulator {
         while line_y < (lines * 10) + y {
             pc = pc.wrapping_add(1);
 
-            match self.map_asm.get(&pc) {
+            match self._map_asm.get(&pc) {
                 Some(line) => {
                     line_y += 10;
                     olc::draw_string(x, line_y, line, olc::WHITE).unwrap();
@@ -80,7 +80,7 @@ impl Emulator {
         while line_y > y {
             pc = pc.wrapping_sub(1);
 
-            match self.map_asm.get(&pc) {
+            match self._map_asm.get(&pc) {
                 Some(line) => {
                     line_y -= 10;
                     olc::draw_string(x, line_y, line, olc::WHITE).unwrap();
@@ -229,7 +229,7 @@ fn main() {
         residual_time: 0f32,
         system_clock_counter: 0,
         selected_palette: 0,
-        map_asm: HashMap::new(),
+        _map_asm: HashMap::new(),
     };
     olc::start("nes", &mut emulator, 780, 480, 2, 2).unwrap();
 }

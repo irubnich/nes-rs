@@ -8,11 +8,14 @@ use instr::{
     AddrMode::{ABS, ABX, ABY, ACC, IDX, IDY, IMM, IMP, IND, REL, ZP0, ZPX, ZPY},
     Instr,
     Operation::{
-        ADC, AHX, ALR, ANC, AND, ARR, ASL, AXS, BCC, BCS, BEQ, BIT, BMI, BNE, BPL, BRK, BVC, BVS,
-        CLC, CLD, CLI, CLV, CMP, CPX, CPY, DCP, DEC, DEX, DEY, EOR, IGN, INC, INX, INY, ISB, JMP,
-        JSR, LAS, LAX, LDA, LDX, LDY, LSR, NOP, ORA, PHA, PHP, PLA, PLP, RLA, ROL, ROR, RRA, RTI,
-        RTS, SAX, SBC, SEC, SED, SEI, SKB, SLO, SRE, STA, STX, STY, SXA, SYA, TAS, TAX, TAY, TSX,
-        TXA, TXS, TYA, XAA, XXX,
+        ADC, AND, ASL, BCC, BCS, BEQ, BIT, BMI, BNE, BPL, BRK, BVC, BVS,
+        CLC, CLD, CLV, CMP, CPX, CPY, DCP, DEC, DEX, DEY, EOR, IGN, INC, INX, INY, ISB, JMP,
+        JSR, LAX, LDA, LDX, LDY, LSR, NOP, ORA, PHA, PHP, PLA, PLP, RLA, ROL, ROR, RRA, RTI,
+        RTS, SAX, SBC, SEC, SED, SEI, SKB, SLO, SRE, STA, STX, STY, TAX, TAY, TSX,
+        TXA, TXS, TYA, XXX,
+
+        // unimplemented
+        // AHX, ALR, ANC, ARR, AXS, CLI, LAS, SXA, SYA, TAS, XAA
     },
 };
 
@@ -122,7 +125,6 @@ impl CPU {
             ABY => self.aby(),
             ZPX => self.zpx(),
             ZPY => self.zpy(),
-            x => panic!("unimplemented addr mode {:?}", x)
         }
 
         match self.instr.op() {
@@ -364,7 +366,7 @@ impl CPU {
         // later
     }
 
-    fn trace_instr(&mut self) {
+    pub fn trace_instr(&mut self) {
         let pc = self.pc;
         let acc = self.a;
         let x = self.x;
@@ -379,7 +381,7 @@ impl CPU {
         println!("{:<50} A:{acc:02X} X:{x:02X} Y:{y:02X} P:{st:02X} SP:{sp:02X} PPU:{ppu_cycle:3},{ppu_scanline:3} CYC:{cycle}", self.disassemble(pc));
     }
 
-    fn disassemble(&mut self, pc: u16) -> &str {
+    pub fn disassemble(&mut self, pc: u16) -> &str {
         self.disasm.clear();
 
         let opcode = self.peek(pc);
