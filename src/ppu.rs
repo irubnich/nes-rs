@@ -43,8 +43,6 @@ pub struct PPU {
     bg_shifter_pattern_hi: u16,
     bg_shifter_attrib_lo: u16,
     bg_shifter_attrib_hi: u16,
-
-    addr_hi: u8,
 }
 
 bitflags! {
@@ -199,7 +197,6 @@ impl PPU {
             tram_addr: LoopyRegister::new(),
             address_latch: 0,
             ppu_data_buffer: 0,
-            addr_hi: 0,
             nmi: false,
             fine_x: 0,
             bg_next_tile_attrib: 0,

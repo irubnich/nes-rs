@@ -580,29 +580,36 @@ impl CPU {
     }
 
     pub fn brk(&mut self) {
-        self.fetch_data();
-        self.push_u16(self.pc);
+        self.pc += 1;
 
-        let status = (self.status | Status::U | Status::B).bits();
+        self.status.set(Status::I, true);
+        self.push(((self.pc >> 8) & 0x00FF).try_into().unwrap());
+        self.push((self.pc & 0x00FF).try_into().unwrap());
 
-        if self.nmi {
-            self.nmi = false;
-            self.push(status);
-            self.status.set(Status::I, true);
+        self.status.set(Status::B, true);
+        self.push(self.status.bits());
+        self.status.set(Status::B, false);
 
-            self.pc = self.read_u16(Self::NMI_VECTOR);
-            println!("NMI");
-        } else {
-            self.push(status);
-            self.status.set(Status::I, true);
+        let lo = self.read(0xFFFF);
+        let hi = self.read(0xFFFE);
+        self.pc = u16::from_le_bytes([lo, hi])
+    }
 
-            self.pc = self.read_u16(Self::IRQ_VECTOR);
-            println!("IRQ");
-        }
+    pub fn tas(&mut self) {
+        self.write(self.abs_addr, self.a);
+        self.sp = self.x;
+    }
 
-        println!("suppress nmi after brk?");
+    pub fn sxa(&mut self) {
+        let hi = (self.abs_addr >> 8) as u8;
+        let lo = (self.abs_addr & 0xFF) as u8;
+        let val = self.x & hi.wrapping_add(1);
+        self.abs_addr = u16::from_le_bytes([lo, self.x & hi.wrapping_add(1)]);
+        self.write_fetched(val);
+    }
 
-        self.prev_nmi = false;
+    pub fn cli(&mut self) {
+        self.status.set(Status::I, false);
     }
 
     pub fn xxx(&mut self) {

@@ -12,10 +12,10 @@ use instr::{
         CLC, CLD, CLV, CMP, CPX, CPY, DCP, DEC, DEX, DEY, EOR, IGN, INC, INX, INY, ISB, JMP,
         JSR, LAX, LDA, LDX, LDY, LSR, NOP, ORA, PHA, PHP, PLA, PLP, RLA, ROL, ROR, RRA, RTI,
         RTS, SAX, SBC, SEC, SED, SEI, SKB, SLO, SRE, STA, STX, STY, TAX, TAY, TSX,
-        TXA, TXS, TYA, XXX,
+        TXA, TXS, TYA, XXX, TAS, SXA, CLI,
 
         // unimplemented
-        // AHX, ALR, ANC, ARR, AXS, CLI, LAS, SXA, SYA, TAS, XAA
+        // AHX, ALR, ANC, ARR, AXS, LAS, SYA, XAA
     },
 };
 
@@ -66,8 +66,6 @@ pub struct CPU {
 
 impl CPU {
     const SP_BASE: u16 = 0x0100;
-    const NMI_VECTOR: u16 = 0xFFFA;
-    const IRQ_VECTOR: u16 = 0xFFFE;
 
     pub fn new(bus: Bus) -> CPU {
         let mut cpu = CPU {
@@ -190,14 +188,13 @@ impl CPU {
             RLA => self.rla(),
             SRE => self.sre(),
             RRA => self.rra(),
+            TAS => self.tas(),
+            SXA => self.sxa(),
+            CLI => self.cli(),
             BRK => self.brk(),
             NOP => self.nop(),
             XXX => self.xxx(),
             x => panic!("unimplemented op {:?}", x)
-        }
-
-        if self.prev_run_irq || self.prev_nmi {
-            self.irq();
         }
 
         let cycles_ran = self.clock_count - start_cycle;
@@ -235,24 +232,25 @@ impl CPU {
         self.cycles_remaining > 0
     }
 
-    pub fn irq(&mut self) {
-        self.read(self.pc);
-        self.read(self.pc);
-        self.push_u16(self.pc);
+    pub fn nmi(&mut self) {
+        self.push(((self.pc >> 8) & 0x00FF).try_into().unwrap());
+        self.push((self.pc & 0x00FF).try_into().unwrap());
 
-        let status = ((self.status | Status::U) & !Status::B).bits();
+        self.status.set(Status::B, false);
+        self.status.set(Status::U, true);
+        self.status.set(Status::I, true);
 
-        if self.nmi {
-            self.nmi = false;
-            self.push(status);
-            self.status.set(Status::I, true);
+        self.push(self.status.bits());
 
-            self.pc = self.read_u16(Self::NMI_VECTOR);
-        } else {
-            self.push(status);
-            self.status.set(Status::I, true);
+        self.abs_addr = 0xFFFA;
+        let lo = self.read(self.abs_addr);
+        let hi = self.read(self.abs_addr.wrapping_add(1));
+        self.pc = u16::from_le_bytes([lo, hi]);
 
-            self.pc = self.read_u16(Self::IRQ_VECTOR);
+        // 8 cycles
+        for _ in 0..8 {
+            self.start_cycle();
+            self.end_cycle();
         }
     }
 

@@ -107,8 +107,7 @@ impl Emulator {
 
         if self.ppu.borrow().nmi {
             self.ppu.borrow_mut().nmi = false;
-            self.cpu.nmi = true;
-            self.cpu.irq();
+            self.cpu.nmi();
         }
 
         self.system_clock_counter += 1;
