@@ -108,14 +108,26 @@ impl LoopyRegister {
         self.register = new_register;
     }
 
-    pub fn get_nametable_select(&self) -> u8 {
-        let mask: u16 = 0b11 << 10;
+    pub fn get_nametable_select_x(&self) -> u8 {
+        let mask: u16 = 0b01 << 11;
+        let extract = (self.register & mask) >> 11;
+        extract.try_into().unwrap()
+    }
+
+    pub fn set_nametable_select_x(&mut self, val: u8) {
+        let val: u16 = u16::from(val) & 0b01;
+        let new_register = (val << 11) | self.register;
+        self.register = new_register;
+    }
+
+    pub fn get_nametable_select_y(&self) -> u8 {
+        let mask: u16 = 0b10 << 10;
         let extract = (self.register & mask) >> 10;
         extract.try_into().unwrap()
     }
 
-    pub fn set_nametable_select(&mut self, val: u8) {
-        let val: u16 = u16::from(val) & 0b0011;
+    pub fn set_nametable_select_y(&mut self, val: u8) {
+        let val: u16 = u16::from(val) & 0b10;
         let new_register = (val << 10) | self.register;
         self.register = new_register;
     }
@@ -272,7 +284,7 @@ impl PPU {
                     return self.status.bits();
                 }
 
-                let data = self.status.bits();
+                let data = (self.status.bits() & 0xE0) | (self.ppu_data_buffer & 0x1F);
                 self.status.set(PPUStatus::VERTICAL_BLANK, false);
                 self.address_latch = 0;
                 data
@@ -306,8 +318,10 @@ impl PPU {
             0x0000 => {
                 self.control = PPUControl::from_bits(data).unwrap();
 
-                let val = self.control.bits() & 0b0000_0011;
-                self.tram_addr.set_nametable_select(val);
+                let val_y = self.control.bits() & 0b0000_0010;
+                let val_x = self.control.bits() & 0b0000_0001;
+                self.tram_addr.set_nametable_select_x(val_x);
+                self.tram_addr.set_nametable_select_y(val_y);
             },
             0x0001 => {
                 self.mask = PPUMask::from_bits(data).unwrap();
@@ -365,6 +379,7 @@ impl PPU {
 
             return self.tbl_pattern[idx1 as usize][idx2 as usize];
         } else if addr >= 0x2000 && addr <= 0x3EFF {
+            let addr = addr & 0x0FFF;
             let idx = (addr & 0x03FF) as usize;
 
             if self.cart.borrow().mirror == Mirror::VERTICAL {
@@ -382,8 +397,7 @@ impl PPU {
                     0x0800..=0x0BFF => self.tbl_name[1][idx],
                     0x0C00..=0x0FFF => self.tbl_name[1][idx],
                     x => {
-                        //println!("invalid nametable read 2, from: {x:04X}");
-                        0
+                        panic!("invalid nametable read 2, from: {x:04X}");
                     },
                 }
             } else {
@@ -532,6 +546,10 @@ impl PPU {
 
     pub fn clock(&mut self) {
         if self.scanline >= -1 && self.scanline < 240 {
+            if self.scanline == 0 && self.cycle == 0 {
+                self.cycle = 1;
+            }
+
             if self.scanline == -1 && self.cycle == 1 {
                 self.status.set(PPUStatus::VERTICAL_BLANK, false);
             }
@@ -546,11 +564,16 @@ impl PPU {
                     },
                     2 => {
                         let addr: u16 = 0x23C0
-                            | u16::from(self.vram_addr.get_nametable_select()) << 11
-                            | u16::from(self.vram_addr.get_coarse_y_scroll()) << 3
-                            | u16::from(self.vram_addr.get_coarse_x_scroll());
+                            | u16::from(self.vram_addr.get_nametable_select_y()) << 11
+                            | u16::from(self.vram_addr.get_nametable_select_x()) << 10
+                            | u16::from(self.vram_addr.get_coarse_y_scroll() >> 2) << 3
+                            | u16::from(self.vram_addr.get_coarse_x_scroll() >> 2);
 
-                        self.bg_next_tile_attrib = self.ppu_read(addr) & 0x03;
+                        self.bg_next_tile_attrib = self.ppu_read(addr);
+                        if self.vram_addr.get_coarse_y_scroll() & 0x02 > 0 { self.bg_next_tile_attrib >>= 4 }
+                        if self.vram_addr.get_coarse_x_scroll() & 0x02 > 0 { self.bg_next_tile_attrib >>= 2 }
+
+                        self.bg_next_tile_attrib &= 0x03;
                     },
                     4 => {
                         let bit: u16 = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1 } else { 0 };
@@ -567,21 +590,26 @@ impl PPU {
                     7 => {
                         self.increment_scroll_x();
                     },
-                    x => ()//println!("cycle {x} doing nothing")
+                    _ => (), // noop
+                }
+
+                if self.cycle == 256 {
+                    self.increment_scroll_y();
+                }
+
+                if self.cycle == 257 {
+                    self.load_background_shifters();
+                    self.transfer_address_x();
+                }
+
+                if self.cycle == 338 || self.cycle == 340 {
+                    self.bg_next_tile_id = self.ppu_read(0x2000 | (self.vram_addr.register & 0x0FFF));
+                }
+
+                if self.scanline == -1 && self.cycle >= 280 && self.cycle < 305 {
+                    self.transfer_address_y();
                 }
             }
-        }
-
-        if self.cycle == 256 {
-            self.increment_scroll_y();
-        }
-
-        if self.cycle == 257 {
-            self.transfer_address_x();
-        }
-
-        if self.scanline == -1 && self.cycle >= 280 && self.cycle < 305 {
-            self.transfer_address_y();
         }
 
         if self.scanline == 241 && self.cycle == 1 {
@@ -605,6 +633,9 @@ impl PPU {
             bg_palette = (bg_pal1 << 1) | bg_pal0;
         }
 
+        if bg_pixel != 0 || bg_palette != 0 {
+            //println!("pixel coords: {bg_pixel},{bg_palette}");
+        }
         self.spr_screen.set_pixel(self.cycle - 1, self.scanline, self.get_color_from_palette_ram(bg_palette, bg_pixel));
 
         self.cycle += 1;
