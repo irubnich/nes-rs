@@ -109,20 +109,20 @@ impl LoopyRegister {
     }
 
     pub fn get_nametable_select_x(&self) -> u8 {
-        let mask: u16 = 0b01 << 11;
-        let extract = (self.register & mask) >> 11;
+        let mask: u16 = 0b01 << 10;
+        let extract = (self.register & mask) >> 10;
         extract.try_into().unwrap()
     }
 
     pub fn set_nametable_select_x(&mut self, val: u8) {
         let val: u16 = u16::from(val) & 0b01;
-        let new_register = (val << 11) | self.register;
+        let new_register = (val << 10) | self.register;
         self.register = new_register;
     }
 
     pub fn get_nametable_select_y(&self) -> u8 {
-        let mask: u16 = 0b10 << 10;
-        let extract = (self.register & mask) >> 10;
+        let mask: u16 = 0b10 << 11;
+        let extract = (self.register & mask) >> 11;
         extract.try_into().unwrap()
     }
 
@@ -475,42 +475,38 @@ impl PPU {
     fn increment_scroll_x(&mut self) {
         if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
             if self.vram_addr.get_coarse_x_scroll() == 31 {
-                self.vram_addr.set_coarse_x_scroll(0);
-
-                // [...]YX[...]
-                let x_mask = 0b000_0100_0000_0000;
-                self.vram_addr.register = self.vram_addr.register ^ x_mask;
+                self.vram_addr.register &= !0x001F;
+                self.vram_addr.register ^= 0x0400;
             } else {
-                self.vram_addr.set_coarse_x_scroll(self.vram_addr.get_coarse_x_scroll() + 1);
+                self.vram_addr.register += 1;
             }
         }
     }
 
     fn increment_scroll_y(&mut self) {
         if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
-            if self.vram_addr.get_fine_y_scroll() < 7 {
-                self.vram_addr.set_fine_y_scroll(self.vram_addr.get_fine_y_scroll() + 1);
+            if (self.vram_addr.register & 0x7000) != 0x7000 {
+                self.vram_addr.register += 0x1000;
             } else {
-                self.vram_addr.set_fine_y_scroll(0);
-
-                if self.vram_addr.get_coarse_y_scroll() == 29 {
-                    self.vram_addr.set_coarse_y_scroll(0);
-
-                    // [...]YX[...]
-                    let y_mask = 0b000_1000_0000_0000;
-                    self.vram_addr.register = self.vram_addr.register ^ y_mask;
-                } else if self.vram_addr.get_coarse_y_scroll() == 31 {
-                    self.vram_addr.set_coarse_y_scroll(0);
+                self.vram_addr.register &= !0x7000;
+                let mut y = (self.vram_addr.register & 0x03E0) >> 5;
+                if y == 29 {
+                    y = 0;
+                    self.vram_addr.register ^= 0x0800;
+                } else if y == 31 {
+                    y = 0;
                 } else {
-                    self.vram_addr.set_coarse_y_scroll(self.vram_addr.get_coarse_y_scroll() + 1);
+                    y += 1;
                 }
+
+                self.vram_addr.register = (self.vram_addr.register & !0x03E0) | (y << 5);
             }
         }
     }
 
     fn transfer_address_x(&mut self) {
         if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
-            let nametable_x_val = self.tram_addr.register & 0b000_0100_0000_0000;
+            let nametable_x_val = self.tram_addr.register & 0b0000_0100_0000_0000;
             self.vram_addr.register |= nametable_x_val;
 
             self.vram_addr.set_coarse_x_scroll(self.tram_addr.get_coarse_x_scroll());
@@ -521,7 +517,7 @@ impl PPU {
         if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
             self.vram_addr.set_fine_y_scroll(self.tram_addr.get_fine_y_scroll());
 
-            let nametable_y_val = self.tram_addr.register & 0b000_1000_0000_0000;
+            let nametable_y_val = self.tram_addr.register & 0b0000_1000_0000_0000;
             self.vram_addr.register |= nametable_y_val;
 
             self.vram_addr.set_coarse_y_scroll(self.tram_addr.get_coarse_y_scroll());
@@ -583,7 +579,7 @@ impl PPU {
                     },
                     6 => {
                         let bit: u16 = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1 } else { 0 };
-                        let addr = (bit << 12) + (u16::from(self.bg_next_tile_id) << 4) + u16::from(self.vram_addr.get_fine_y_scroll()) + 8;
+                        let addr = (bit << 12) + (u16::from(self.bg_next_tile_id) << 4) + u16::from(self.vram_addr.get_fine_y_scroll() + 8);
 
                         self.bg_next_tile_msb = self.ppu_read(addr);
                     },
@@ -602,14 +598,14 @@ impl PPU {
                     self.transfer_address_x();
                 }
 
-                if self.cycle == 338 || self.cycle == 340 {
-                    self.bg_next_tile_id = self.ppu_read(0x2000 | (self.vram_addr.register & 0x0FFF));
-                }
-
                 if self.scanline == -1 && self.cycle >= 280 && self.cycle < 305 {
                     self.transfer_address_y();
                 }
             }
+        }
+
+        if self.cycle == 338 || self.cycle == 340 {
+            self.bg_next_tile_id = self.ppu_read(0x2000 | (self.vram_addr.register & 0x0FFF));
         }
 
         if self.scanline == 241 && self.cycle == 1 {

@@ -123,11 +123,7 @@ impl Emulator {
 
 impl olc::Application for Emulator {
     fn on_user_create(&mut self) -> Result<(), olc::Error> {
-        //self.map_asm = self.cpu.disassemble(0x0000, 0xFFFF);
-
         self.reset();
-        //self.cpu.pc = 0xC000;
-
         Ok(())
     }
 
