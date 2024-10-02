@@ -2,7 +2,6 @@ use std::{cell::RefCell, rc::Rc};
 use bitflags::bitflags;
 
 use olc_pixel_game_engine as olc;
-use rand::Rng;
 
 use crate::cartridge::{Cartridge, Mirror};
 
@@ -27,11 +26,23 @@ pub struct PPU {
     status: PPUStatus,
     mask: PPUMask,
     control: PPUControl,
+    vram_addr: LoopyRegister,
+    tram_addr: LoopyRegister,
     pub nmi: bool,
 
     address_latch: u8,
     ppu_data_buffer: u8,
-    ppu_address: u16,
+    fine_x: u8,
+
+    bg_next_tile_id: u8,
+    bg_next_tile_attrib: u8,
+    bg_next_tile_lsb: u8,
+    bg_next_tile_msb: u8,
+
+    bg_shifter_pattern_lo: u16,
+    bg_shifter_pattern_hi: u16,
+    bg_shifter_attrib_lo: u16,
+    bg_shifter_attrib_hi: u16,
 
     addr_hi: u8,
 }
@@ -39,42 +50,98 @@ pub struct PPU {
 bitflags! {
     #[derive(Copy, Clone, Debug)]
     pub struct PPUStatus: u8 {
-        const PS_UNUSED1 = 0b0000_0001;
-        const PS_UNUSED2 = 0b0000_0010;
-        const PS_UNUSED3 = 0b0000_0100;
-        const PS_UNUSED4 = 0b0000_1000;
-        const PS_UNUSED5 = 0b0001_0000;
-        const PS_SPRITE_OVERFLOW = 0b0010_0000;
-        const PS_SPRITE_ZERO_HIT = 0b0100_0000;
-        const PS_VERTICAL_BLANK = 0b1000_0000;
+        const SPRITE_OVERFLOW = 0b0010_0000;
+        const SPRITE_ZERO_HIT = 0b0100_0000;
+        const VERTICAL_BLANK = 0b1000_0000;
     }
 }
 
 bitflags! {
     #[derive(Copy, Clone, Debug)]
     pub struct PPUMask: u8 {
-        const PS_GRAYSCALE = 0b0000_0001;
-        const PS_RENDER_BACKGROUND_LEFT = 0b0000_0010;
-        const PS_RENDER_SPRITES_LEFT = 0b0000_0100;
-        const PS_RENDER_BACKGROUND = 0b0000_1000;
-        const PS_RENDER_SPRITES = 0b0001_0000;
-        const PS_ENHANCE_RED = 0b0010_0000;
-        const PS_ENHANCE_GREEN = 0b0100_0000;
-        const PS_ENHANCE_BLUE = 0b1000_0000;
+        const GRAYSCALE = 0b0000_0001;
+        const RENDER_BACKGROUND_LEFT = 0b0000_0010;
+        const RENDER_SPRITES_LEFT = 0b0000_0100;
+        const RENDER_BACKGROUND = 0b0000_1000;
+        const RENDER_SPRITES = 0b0001_0000;
+        const ENHANCE_RED = 0b0010_0000;
+        const ENHANCE_GREEN = 0b0100_0000;
+        const ENHANCE_BLUE = 0b1000_0000;
     }
 }
 
 bitflags! {
     #[derive(Copy, Clone, Debug)]
     pub struct PPUControl: u8 {
-        const PS_NAMETABLE_X = 0b0000_0001;
-        const PS_NAMETABLE_Y = 0b0000_0010;
-        const PS_INCREMENT_MODE = 0b0000_0100;
-        const PS_PATTERN_SPRITE = 0b0000_1000;
-        const PS_PATTERN_BACKGROUND = 0b0001_0000;
-        const PS_SPRITE_SIZE = 0b0010_0000;
-        const PS_SLAVE_MODE = 0b0100_0000;
-        const PS_ENABLE_NMI = 0b1000_0000;
+        const NAMETABLE_X = 0b0000_0001;
+        const NAMETABLE_Y = 0b0000_0010;
+        const INCREMENT_MODE = 0b0000_0100;
+        const PATTERN_SPRITE = 0b0000_1000;
+        const PATTERN_BACKGROUND = 0b0001_0000;
+        const SPRITE_SIZE = 0b0010_0000;
+        const SLAVE_MODE = 0b0100_0000;
+        const ENABLE_NMI = 0b1000_0000;
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct LoopyRegister {
+    pub register: u16,
+}
+
+impl LoopyRegister {
+    pub fn new() -> LoopyRegister {
+        LoopyRegister {
+            register: 0x0000,
+        }
+    }
+
+    pub fn get_fine_y_scroll(&self) -> u8 {
+        let mask: u16 = 0b111 << 12;
+        let extract = (self.register & mask) >> 12;
+        extract.try_into().unwrap()
+    }
+
+    pub fn set_fine_y_scroll(&mut self, val: u8) {
+        let val: u16 = u16::from(val) & 0b0000_0111;
+        let new_register = (val << 12) | self.register;
+        self.register = new_register;
+    }
+
+    pub fn get_nametable_select(&self) -> u8 {
+        let mask: u16 = 0b11 << 10;
+        let extract = (self.register & mask) >> 10;
+        extract.try_into().unwrap()
+    }
+
+    pub fn set_nametable_select(&mut self, val: u8) {
+        let val: u16 = u16::from(val) & 0b0011;
+        let new_register = (val << 10) | self.register;
+        self.register = new_register;
+    }
+
+    pub fn get_coarse_y_scroll(&self) -> u8 {
+        let mask: u16 = 0b0001_1111 << 5;
+        let extract = (self.register & mask) >> 5;
+        extract.try_into().unwrap()
+    }
+
+    pub fn set_coarse_y_scroll(&mut self, val: u8) {
+        let val: u16 = u16::from(val) & 0b0001_1111;
+        let new_register = (val << 5) | self.register;
+        self.register = new_register;
+    }
+
+    pub fn get_coarse_x_scroll(&self) -> u8 {
+        let mask: u16 = 0b0001_1111;
+        let extract = self.register & mask;
+        extract.try_into().unwrap()
+    }
+
+    pub fn set_coarse_x_scroll(&mut self, val: u8) {
+        let val: u16 = u16::from(val) & 0b0001_1111;
+        let new_register = val | self.register;
+        self.register = new_register;
     }
 }
 
@@ -176,11 +243,21 @@ impl PPU {
             status: PPUStatus::empty(),
             mask: PPUMask::empty(),
             control: PPUControl::empty(),
+            vram_addr: LoopyRegister::new(),
+            tram_addr: LoopyRegister::new(),
             address_latch: 0,
             ppu_data_buffer: 0,
-            ppu_address: 0,
             addr_hi: 0,
             nmi: false,
+            fine_x: 0,
+            bg_next_tile_attrib: 0,
+            bg_next_tile_id: 0,
+            bg_next_tile_lsb: 0,
+            bg_next_tile_msb: 0,
+            bg_shifter_attrib_hi: 0,
+            bg_shifter_attrib_lo: 0,
+            bg_shifter_pattern_hi: 0,
+            bg_shifter_pattern_lo: 0,
         };
 
         ppu
@@ -196,7 +273,7 @@ impl PPU {
                 }
 
                 let data = self.status.bits();
-                self.status.set(PPUStatus::PS_VERTICAL_BLANK, false);
+                self.status.set(PPUStatus::VERTICAL_BLANK, false);
                 self.address_latch = 0;
                 data
             },
@@ -209,14 +286,14 @@ impl PPU {
                     return 0x00;
                 }
 
-                let data = self.ppu_data_buffer;
-                self.ppu_data_buffer = self.ppu_read(self.ppu_address);
+                let mut data = self.ppu_data_buffer;
+                self.ppu_data_buffer = self.ppu_read(self.vram_addr.register);
 
-                if self.ppu_address >= 0x3F00 {
-                    return self.ppu_data_buffer;
+                if self.vram_addr.register >= 0x3F00 {
+                    data = self.ppu_data_buffer;
                 }
 
-                self.ppu_address += if self.control.intersects(PPUControl::PS_INCREMENT_MODE) { 32 } else { 1 };
+                self.vram_addr.register += if self.control.intersects(PPUControl::INCREMENT_MODE) { 32 } else { 1 };
 
                 data
             },
@@ -228,6 +305,9 @@ impl PPU {
         match addr {
             0x0000 => {
                 self.control = PPUControl::from_bits(data).unwrap();
+
+                let val = self.control.bits() & 0b0000_0011;
+                self.tram_addr.set_nametable_select(val);
             },
             0x0001 => {
                 self.mask = PPUMask::from_bits(data).unwrap();
@@ -235,20 +315,40 @@ impl PPU {
             0x0002 => (),
             0x0003 => (),
             0x0004 => (),
-            0x0005 => (),
-            0x0006 => {
+            0x0005 => {
                 if self.address_latch == 0 {
-                    self.addr_hi = data;
+                    let coarse_x_val = (data & 0b1111_1000) >> 3;
+                    self.tram_addr.register |= u16::from(coarse_x_val);
+
+                    self.fine_x = data & 0b0111;
+
                     self.address_latch = 1;
                 } else {
-                    let lo = data;
-                    self.ppu_address = u16::from(self.addr_hi) << 8 | u16::from(lo);
+                    let fine_y_scroll_val = data & 0b0000_0111;
+                    self.tram_addr.set_fine_y_scroll(fine_y_scroll_val);
+
+                    self.tram_addr.register |= u16::from(((data & 0b1111_1000) >> 3) << 5);
+
+                    self.address_latch = 0;
+                }
+            },
+            0x0006 => {
+                if self.address_latch == 0 {
+                    self.tram_addr.register = u16::from(data & 0b0011_1111) << 8;
+
+                    self.tram_addr.register &= 0b011_1111_1111_1111;
+
+                    self.address_latch = 1;
+                } else {
+                    self.tram_addr.register |= u16::from(data);
+                    self.vram_addr = self.tram_addr;
+
                     self.address_latch = 0;
                 }
             },
             0x0007 => {
-                self.ppu_write(self.ppu_address, data);
-                self.ppu_address += if self.control.intersects(PPUControl::PS_INCREMENT_MODE) { 32 } else { 1 };
+                self.ppu_write(self.vram_addr.register, data);
+                self.vram_addr.register += if self.control.intersects(PPUControl::INCREMENT_MODE) { 32 } else { 1 };
             },
             _ => panic!("invalid CPU write from PPU")
         }
@@ -281,7 +381,10 @@ impl PPU {
                     0x0400..=0x07FF => self.tbl_name[0][idx],
                     0x0800..=0x0BFF => self.tbl_name[1][idx],
                     0x0C00..=0x0FFF => self.tbl_name[1][idx],
-                    _ => panic!("invalid nametable read 2"),
+                    x => {
+                        //println!("invalid nametable read 2, from: {x:04X}");
+                        0
+                    },
                 }
             } else {
                 panic!("invalid mirroring read");
@@ -355,21 +458,154 @@ impl PPU {
         self.control = PPUControl::empty();
     }
 
+    fn increment_scroll_x(&mut self) {
+        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
+            if self.vram_addr.get_coarse_x_scroll() == 31 {
+                self.vram_addr.set_coarse_x_scroll(0);
+
+                // [...]YX[...]
+                let x_mask = 0b000_0100_0000_0000;
+                self.vram_addr.register = self.vram_addr.register ^ x_mask;
+            } else {
+                self.vram_addr.set_coarse_x_scroll(self.vram_addr.get_coarse_x_scroll() + 1);
+            }
+        }
+    }
+
+    fn increment_scroll_y(&mut self) {
+        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
+            if self.vram_addr.get_fine_y_scroll() < 7 {
+                self.vram_addr.set_fine_y_scroll(self.vram_addr.get_fine_y_scroll() + 1);
+            } else {
+                self.vram_addr.set_fine_y_scroll(0);
+
+                if self.vram_addr.get_coarse_y_scroll() == 29 {
+                    self.vram_addr.set_coarse_y_scroll(0);
+
+                    // [...]YX[...]
+                    let y_mask = 0b000_1000_0000_0000;
+                    self.vram_addr.register = self.vram_addr.register ^ y_mask;
+                } else if self.vram_addr.get_coarse_y_scroll() == 31 {
+                    self.vram_addr.set_coarse_y_scroll(0);
+                } else {
+                    self.vram_addr.set_coarse_y_scroll(self.vram_addr.get_coarse_y_scroll() + 1);
+                }
+            }
+        }
+    }
+
+    fn transfer_address_x(&mut self) {
+        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
+            let nametable_x_val = self.tram_addr.register & 0b000_0100_0000_0000;
+            self.vram_addr.register |= nametable_x_val;
+
+            self.vram_addr.set_coarse_x_scroll(self.tram_addr.get_coarse_x_scroll());
+        }
+    }
+
+    fn transfer_address_y(&mut self) {
+        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
+            self.vram_addr.set_fine_y_scroll(self.tram_addr.get_fine_y_scroll());
+
+            let nametable_y_val = self.tram_addr.register & 0b000_1000_0000_0000;
+            self.vram_addr.register |= nametable_y_val;
+
+            self.vram_addr.set_coarse_y_scroll(self.tram_addr.get_coarse_y_scroll());
+        }
+    }
+
+    fn load_background_shifters(&mut self) {
+        self.bg_shifter_pattern_lo = (self.bg_shifter_pattern_lo & 0xFF00) | u16::from(self.bg_next_tile_lsb);
+        self.bg_shifter_pattern_hi = (self.bg_shifter_pattern_hi & 0xFF00) | u16::from(self.bg_next_tile_msb);
+        self.bg_shifter_attrib_lo = (self.bg_shifter_attrib_lo & 0xFF00) | u16::from(if self.bg_next_tile_attrib & 0b01 > 0 { 0xFFu16 } else { 0x00 });
+        self.bg_shifter_attrib_hi = (self.bg_shifter_attrib_hi & 0xFF00) | u16::from(if self.bg_next_tile_attrib & 0b10 > 0 { 0xFFu16 } else { 0x00 });
+    }
+
+    fn update_shifters(&mut self) {
+        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) {
+            self.bg_shifter_pattern_lo <<= 1;
+            self.bg_shifter_pattern_hi <<= 1;
+            self.bg_shifter_attrib_lo <<= 1;
+            self.bg_shifter_attrib_hi <<= 1;
+        }
+    }
+
     pub fn clock(&mut self) {
-        if self.scanline == -1 && self.cycle == 1 {
-            self.status.set(PPUStatus::PS_VERTICAL_BLANK, false);
+        if self.scanline >= -1 && self.scanline < 240 {
+            if self.scanline == -1 && self.cycle == 1 {
+                self.status.set(PPUStatus::VERTICAL_BLANK, false);
+            }
+
+            if (self.cycle >= 2 && self.cycle < 258) || (self.cycle >= 321 && self.cycle < 338) {
+                self.update_shifters();
+
+                match (self.cycle - 1) % 8 {
+                    0 => {
+                        self.load_background_shifters();
+                        self.bg_next_tile_id = self.ppu_read(0x2000 | (self.vram_addr.register & 0x0FFF))
+                    },
+                    2 => {
+                        let addr: u16 = 0x23C0
+                            | u16::from(self.vram_addr.get_nametable_select()) << 11
+                            | u16::from(self.vram_addr.get_coarse_y_scroll()) << 3
+                            | u16::from(self.vram_addr.get_coarse_x_scroll());
+
+                        self.bg_next_tile_attrib = self.ppu_read(addr) & 0x03;
+                    },
+                    4 => {
+                        let bit: u16 = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1 } else { 0 };
+                        let addr = (bit << 12) + (u16::from(self.bg_next_tile_id) << 4) + u16::from(self.vram_addr.get_fine_y_scroll());
+
+                        self.bg_next_tile_lsb = self.ppu_read(addr);
+                    },
+                    6 => {
+                        let bit: u16 = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1 } else { 0 };
+                        let addr = (bit << 12) + (u16::from(self.bg_next_tile_id) << 4) + u16::from(self.vram_addr.get_fine_y_scroll()) + 8;
+
+                        self.bg_next_tile_msb = self.ppu_read(addr);
+                    },
+                    7 => {
+                        self.increment_scroll_x();
+                    },
+                    x => ()//println!("cycle {x} doing nothing")
+                }
+            }
+        }
+
+        if self.cycle == 256 {
+            self.increment_scroll_y();
+        }
+
+        if self.cycle == 257 {
+            self.transfer_address_x();
+        }
+
+        if self.scanline == -1 && self.cycle >= 280 && self.cycle < 305 {
+            self.transfer_address_y();
         }
 
         if self.scanline == 241 && self.cycle == 1 {
-            self.status.set(PPUStatus::PS_VERTICAL_BLANK, true);
-            if self.control.intersects(PPUControl::PS_ENABLE_NMI) {
+            self.status.set(PPUStatus::VERTICAL_BLANK, true);
+            if self.control.intersects(PPUControl::ENABLE_NMI) {
                 self.nmi = true;
             }
         }
 
-        // noise
-        // let p: u8 = rand::thread_rng().gen_range(0..=1);
-        // self.spr_screen.set_pixel(self.cycle - 1, self.scanline, if p == 0 { self.pal_screen[0x3F] } else { self.pal_screen[0x30] });
+        let mut bg_pixel: u8 = 0x00;
+        let mut bg_palette: u8 = 0x00;
+
+        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) {
+            let bit_mux: u16 = 0x8000 >> self.fine_x;
+            let p0_pixel: u8 = if self.bg_shifter_pattern_lo & bit_mux > 0 { 1 } else { 0 };
+            let p1_pixel: u8 = if self.bg_shifter_pattern_hi & bit_mux > 0 { 1 } else { 0 };
+            bg_pixel = (p1_pixel << 1) | p0_pixel;
+
+            let bg_pal0 = if self.bg_shifter_attrib_lo & bit_mux > 0 { 1 } else { 0 };
+            let bg_pal1 = if self.bg_shifter_attrib_hi & bit_mux > 0 { 1 } else { 0 };
+            bg_palette = (bg_pal1 << 1) | bg_pal0;
+        }
+
+        self.spr_screen.set_pixel(self.cycle - 1, self.scanline, self.get_color_from_palette_ram(bg_palette, bg_pixel));
 
         self.cycle += 1;
         if self.cycle >= 341 {
