@@ -506,21 +506,15 @@ impl PPU {
 
     fn transfer_address_x(&mut self) {
         if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
-            let nametable_x_val = self.tram_addr.register & 0b0000_0100_0000_0000;
-            self.vram_addr.register |= nametable_x_val;
-
-            self.vram_addr.set_coarse_x_scroll(self.tram_addr.get_coarse_x_scroll());
+            let tram_val = 0b000010000011111 & self.tram_addr.register;
+            self.vram_addr.register |= tram_val;
         }
     }
 
     fn transfer_address_y(&mut self) {
         if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
-            self.vram_addr.set_fine_y_scroll(self.tram_addr.get_fine_y_scroll());
-
-            let nametable_y_val = self.tram_addr.register & 0b0000_1000_0000_0000;
-            self.vram_addr.register |= nametable_y_val;
-
-            self.vram_addr.set_coarse_y_scroll(self.tram_addr.get_coarse_y_scroll());
+            let tram_val = 0b111101111100000 & self.tram_addr.register;
+            self.vram_addr.register |= tram_val;
         }
     }
 
@@ -560,26 +554,31 @@ impl PPU {
                     },
                     2 => {
                         let addr: u16 = 0x23C0
-                            | u16::from(self.vram_addr.get_nametable_select_y()) << 11
-                            | u16::from(self.vram_addr.get_nametable_select_x()) << 10
-                            | u16::from(self.vram_addr.get_coarse_y_scroll() >> 2) << 3
-                            | u16::from(self.vram_addr.get_coarse_x_scroll() >> 2);
+                            | (self.vram_addr.register & 0x0C00)
+                            | ((self.vram_addr.register >> 4) & 0x38)
+                            | ((self.vram_addr.register >> 2) & 0x07);
 
                         self.bg_next_tile_attrib = self.ppu_read(addr);
-                        if self.vram_addr.get_coarse_y_scroll() & 0x02 > 0 { self.bg_next_tile_attrib >>= 4 }
-                        if self.vram_addr.get_coarse_x_scroll() & 0x02 > 0 { self.bg_next_tile_attrib >>= 2 }
+
+                        let coarse_y = (0b000001111100000 & self.vram_addr.register) >> 5;
+                        if coarse_y & 0x02 > 0 { self.bg_next_tile_attrib >>= 4 }
+
+                        let coarse_x = 0b11111 & self.vram_addr.register;
+                        if coarse_x & 0x02 > 0 { self.bg_next_tile_attrib >>= 2 }
 
                         self.bg_next_tile_attrib &= 0x03;
                     },
                     4 => {
                         let bit: u16 = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1 } else { 0 };
-                        let addr = (bit << 12) + (u16::from(self.bg_next_tile_id) << 4) + u16::from(self.vram_addr.get_fine_y_scroll());
+                        let fine_y = (0b111000000000000 & self.vram_addr.register) >> 12;
+                        let addr = (bit << 12) + (u16::from(self.bg_next_tile_id) << 4) + fine_y;
 
                         self.bg_next_tile_lsb = self.ppu_read(addr);
                     },
                     6 => {
                         let bit: u16 = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1 } else { 0 };
-                        let addr = (bit << 12) + (u16::from(self.bg_next_tile_id) << 4) + u16::from(self.vram_addr.get_fine_y_scroll() + 8);
+                        let fine_y = (0b111000000000000 & self.vram_addr.register) >> 12;
+                        let addr = (bit << 12) + (u16::from(self.bg_next_tile_id) << 4) + fine_y + 8;
 
                         self.bg_next_tile_msb = self.ppu_read(addr);
                     },
@@ -597,11 +596,11 @@ impl PPU {
                     self.load_background_shifters();
                     self.transfer_address_x();
                 }
-
-                if self.scanline == -1 && self.cycle >= 280 && self.cycle < 305 {
-                    self.transfer_address_y();
-                }
             }
+        }
+
+        if self.scanline == -1 && self.cycle >= 280 && self.cycle < 305 {
+            self.transfer_address_y();
         }
 
         if self.cycle == 338 || self.cycle == 340 {
