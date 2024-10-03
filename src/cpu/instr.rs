@@ -383,9 +383,7 @@ impl CPU {
     }
 
     pub fn rts(&mut self) {
-        let _ = self.read(Self::SP_BASE | u16::from(self.sp));
         self.pc = self.pop_u16().wrapping_add(1);
-        let _ = self.read(self.pc);
     }
 
     pub fn sbc(&mut self) {
@@ -583,16 +581,14 @@ impl CPU {
         self.pc += 1;
 
         self.status.set(Status::I, true);
-        self.push(((self.pc >> 8) & 0x00FF).try_into().unwrap());
-        self.push((self.pc & 0x00FF).try_into().unwrap());
+
+        self.push_u16(self.pc);
 
         self.status.set(Status::B, true);
         self.push(self.status.bits());
         self.status.set(Status::B, false);
 
-        let lo = self.read(0xFFFF);
-        let hi = self.read(0xFFFE);
-        self.pc = u16::from_le_bytes([lo, hi])
+        self.pc = self.read_u16(0xFFFE);
     }
 
     pub fn tas(&mut self) {

@@ -57,14 +57,14 @@ bitflags! {
 bitflags! {
     #[derive(Copy, Clone, Debug)]
     pub struct PPUMask: u8 {
-        const GRAYSCALE = 0b0000_0001;
-        const RENDER_BACKGROUND_LEFT = 0b0000_0010;
-        const RENDER_SPRITES_LEFT = 0b0000_0100;
-        const RENDER_BACKGROUND = 0b0000_1000;
-        const RENDER_SPRITES = 0b0001_0000;
-        const ENHANCE_RED = 0b0010_0000;
-        const ENHANCE_GREEN = 0b0100_0000;
-        const ENHANCE_BLUE = 0b1000_0000;
+        const GRAYSCALE = 1;
+        const RENDER_BACKGROUND_LEFT = 1 << 1;
+        const RENDER_SPRITES_LEFT = 1 << 2;
+        const RENDER_BACKGROUND = 1 << 3;
+        const RENDER_SPRITES = 1 << 4;
+        const ENHANCE_RED = 1 << 5;
+        const ENHANCE_GREEN = 1 << 6;
+        const ENHANCE_BLUE = 1 << 7;
     }
 }
 
@@ -221,7 +221,7 @@ impl PPU {
                     return self.status.bits();
                 }
 
-                let data = self.status.bits() & 0xE0;
+                let data = (self.status.bits() & 0xE0) | (self.ppu_data_buffer & 0x1F);
                 self.status.set(PPUStatus::VERTICAL_BLANK, false);
                 self.address_latch = 0;
                 data
@@ -242,7 +242,7 @@ impl PPU {
                     data = self.ppu_data_buffer;
                 }
 
-                self.vram_addr.register += if self.control.intersects(PPUControl::INCREMENT_MODE) { 32 } else { 1 };
+                self.vram_addr.register += if self.control.contains(PPUControl::INCREMENT_MODE) { 32 } else { 1 };
 
                 data
             },
@@ -266,7 +266,7 @@ impl PPU {
             0x0004 => (),
             0x0005 => {
                 if self.address_latch == 0 {
-                    self.fine_x = data & 0b111;
+                    self.fine_x = data & 0x07;
 
                     let coarse_x_val = u16::from(data) >> 3;
                     self.tram_addr.register |= coarse_x_val;
@@ -276,27 +276,27 @@ impl PPU {
                     self.tram_addr.register |= (u16::from(data) & 0x07) << 12;
 
                     let coarse_y_val = u16::from(data) >> 3;
-                    self.tram_addr.register = coarse_y_val << 5;
+                    self.tram_addr.register |= coarse_y_val << 5;
 
                     self.address_latch = 0;
                 }
             },
             0x0006 => {
                 if self.address_latch == 0 {
-                    let val = u16::from(data & 0b11_1111) << 8;
+                    let val = (u16::from(data) & 0x3F) << 8;
                     self.tram_addr.register = val | (self.tram_addr.register & 0x00FF);
 
                     self.address_latch = 1;
                 } else {
                     self.tram_addr.register = (self.tram_addr.register & 0xFF00) | u16::from(data);
-                    self.vram_addr = self.tram_addr;
+                    self.vram_addr.register = self.tram_addr.register;
 
                     self.address_latch = 0;
                 }
             },
             0x0007 => {
                 self.ppu_write(self.vram_addr.register, data);
-                self.vram_addr.register += if self.control.intersects(PPUControl::INCREMENT_MODE) { 32 } else { 1 };
+                self.vram_addr.register += if self.control.contains(PPUControl::INCREMENT_MODE) { 32 } else { 1 };
             },
             _ => panic!("invalid CPU write from PPU")
         }
@@ -407,24 +407,24 @@ impl PPU {
     }
 
     fn increment_scroll_x(&mut self) {
-        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
+        if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
             let coarse_x = self.vram_addr.register & 0b11111;
             if coarse_x == 31 {
                 self.vram_addr.register &= !0x001F;
                 self.vram_addr.register ^= 0x0400;
             } else {
-                self.vram_addr.register += 1;
+                self.vram_addr.register = self.vram_addr.register.wrapping_add(1);
             }
         }
     }
 
     fn increment_scroll_y(&mut self) {
-        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
+        if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
             let fine_y = (self.vram_addr.register & 0x7000) >> 12;
-            let new_fine_y = (fine_y + 1) << 12;
 
             if fine_y < 7 {
-                self.vram_addr.register |= new_fine_y;
+                let new_fine_y_mask = (fine_y.wrapping_add(1)) << 12;
+                self.vram_addr.register |= new_fine_y_mask;
             } else {
                 self.vram_addr.register &= !0x7000;
 
@@ -435,7 +435,7 @@ impl PPU {
                 } else if coarse_y == 31 {
                     self.vram_addr.register &= !0x03E0;
                 } else {
-                    let new_coarse_y = coarse_y + 1;
+                    let new_coarse_y = coarse_y.wrapping_add(1);
                     self.vram_addr.register |= (new_coarse_y) << 5;
                 }
             }
@@ -443,14 +443,14 @@ impl PPU {
     }
 
     fn transfer_address_x(&mut self) {
-        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
+        if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
             let tram_val = 0b000010000011111 & self.tram_addr.register;
             self.vram_addr.register |= tram_val;
         }
     }
 
     fn transfer_address_y(&mut self) {
-        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) || self.mask.intersects(PPUMask::RENDER_SPRITES) {
+        if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
             let tram_val = 0b111101111100000 & self.tram_addr.register;
             self.vram_addr.register |= tram_val;
         }
@@ -464,7 +464,7 @@ impl PPU {
     }
 
     fn update_shifters(&mut self) {
-        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) {
+        if self.mask.contains(PPUMask::RENDER_BACKGROUND) {
             self.bg_shifter_pattern_lo <<= 1;
             self.bg_shifter_pattern_hi <<= 1;
             self.bg_shifter_attrib_lo <<= 1;
@@ -509,15 +509,15 @@ impl PPU {
 
                     self.bg_next_tile_attrib &= 0x03;
                 } else if cur_cycle == 4 {
-                    let pattern_bg_bit = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1 } else { 0 };
+                    let pattern_bg_bit = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1u16 } else { 0 };
                     let fine_y = (self.vram_addr.register & 0x7000) >> 12;
-                    let addr = (pattern_bg_bit << 12) + (u16::from(self.bg_next_tile_id) << 4) + fine_y;
+                    let addr = (pattern_bg_bit << 12).wrapping_add(u16::from(self.bg_next_tile_id) << 4).wrapping_add(fine_y);
 
                     self.bg_next_tile_lsb = self.ppu_read(addr);
                 } else if cur_cycle == 6 {
-                    let pattern_bg_bit = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1 } else { 0 };
+                    let pattern_bg_bit = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1u16 } else { 0 };
                     let fine_y = (self.vram_addr.register & 0x7000) >> 12;
-                    let addr = (pattern_bg_bit << 12) + (u16::from(self.bg_next_tile_id) << 4) + fine_y + 8;
+                    let addr = (pattern_bg_bit << 12).wrapping_add(u16::from(self.bg_next_tile_id) << 4).wrapping_add(fine_y).wrapping_add(8);
 
                     self.bg_next_tile_msb = self.ppu_read(addr);
                 } else if cur_cycle == 7 {
@@ -543,12 +543,16 @@ impl PPU {
             }
         }
 
+        if self.scanline == 240 {
+            // noop
+        }
+
         if self.scanline >= 241 && self.scanline < 261 {
             if self.scanline == 241 && self.cycle == 1 {
                 self.status.set(PPUStatus::VERTICAL_BLANK, true);
             }
 
-            if self.control.intersects(PPUControl::ENABLE_NMI) {
+            if self.control.contains(PPUControl::ENABLE_NMI) {
                 self.nmi = true;
             }
         }
@@ -556,7 +560,7 @@ impl PPU {
         let mut bg_pixel: u8 = 0x00;
         let mut bg_palette: u8 = 0x00;
 
-        if self.mask.intersects(PPUMask::RENDER_BACKGROUND) {
+        if self.mask.contains(PPUMask::RENDER_BACKGROUND) {
             let bit_mux: u16 = 0x8000 >> self.fine_x;
             let p0_pixel: u8 = if self.bg_shifter_pattern_lo & bit_mux > 0 { 1 } else { 0 };
             let p1_pixel: u8 = if self.bg_shifter_pattern_hi & bit_mux > 0 { 1 } else { 0 };

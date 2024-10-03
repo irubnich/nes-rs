@@ -123,6 +123,7 @@ impl Emulator {
 impl olc::Application for Emulator {
     fn on_user_create(&mut self) -> Result<(), olc::Error> {
         self.reset();
+        //self.cpu.pc = 0xC000;
         Ok(())
     }
 

@@ -55,11 +55,6 @@ pub struct CPU {
     pub fetched_data: u8,
     pub disasm: String,
 
-    // interrupts
-    pub prev_run_irq: bool,
-    pub nmi: bool,
-    pub prev_nmi: bool,
-
     // misc
     pub corrupted: bool,
 }
@@ -84,9 +79,6 @@ impl CPU {
             instr: CPU::INSTRUCTIONS[0x00],
             fetched_data: 0,
             disasm: String::with_capacity(100),
-            nmi: false,
-            prev_nmi: false,
-            prev_run_irq: false,
             corrupted: false,
         };
 
@@ -105,6 +97,7 @@ impl CPU {
 
         let start_cycle = self.clock_count;
 
+        self.status.set(Status::U, true);
         let opcode = self.read_instr();
         self.instr = CPU::INSTRUCTIONS[opcode as usize];
 
@@ -197,6 +190,8 @@ impl CPU {
             x => panic!("unimplemented op {:?}", x)
         }
 
+        self.status.set(Status::U, true);
+
         let cycles_ran = self.clock_count - start_cycle;
 
         self.cycles_remaining = cycles_ran;
@@ -213,9 +208,6 @@ impl CPU {
 
         self.clock_count = 0;
         self.cycles_remaining = 0;
-        self.prev_run_irq = false;
-        self.nmi = false;
-        self.prev_nmi = false;
 
         let lo = self.bus.cpu_read(0xFFFC, true);
         let hi = self.bus.cpu_read(0xFFFD, true);
@@ -233,22 +225,15 @@ impl CPU {
     }
 
     pub fn nmi(&mut self) {
-        self.push(((self.pc >> 8) & 0x00FF).try_into().unwrap());
-        self.push((self.pc & 0x00FF).try_into().unwrap());
+        self.push_u16(self.pc);
 
-        self.status.set(Status::B, false);
-        self.status.set(Status::U, true);
-        self.status.set(Status::I, true);
+        let status = ((self.status | Status::U | Status::I) & !Status::B).bits();
+        self.push(status);
 
-        self.push(self.status.bits());
+        self.pc = self.read_u16(0xFFFA);
 
-        self.abs_addr = 0xFFFA;
-        let lo = self.read(self.abs_addr);
-        let hi = self.read(self.abs_addr.wrapping_add(1));
-        self.pc = u16::from_le_bytes([lo, hi]);
-
-        // 8 cycles
-        for _ in 0..8 {
+        // 3 more cycles
+        for _ in 0..3 {
             self.start_cycle();
             self.end_cycle();
         }
