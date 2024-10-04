@@ -123,7 +123,7 @@ impl Emulator {
 impl olc::Application for Emulator {
     fn on_user_create(&mut self) -> Result<(), olc::Error> {
         self.reset();
-        //self.cpu.pc = 0xC000;
+        //self.cpu.pc = 0xC001;
         Ok(())
     }
 
@@ -222,7 +222,7 @@ impl olc::Application for Emulator {
 }
 
 fn main() {
-    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("dk.nes"))));
+    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("palette.nes"))));
 
     let ppu = Rc::new(RefCell::new(PPU::new(cartridge.clone())));
 

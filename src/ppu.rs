@@ -213,6 +213,9 @@ impl PPU {
     }
 
     pub fn cpu_read(&mut self, addr: u16, read_only: bool) -> u8 {
+        if read_only {
+            println!("read only");
+        }
         match addr {
             0x0000 => 0x00,
             0x0001 => 0x00,
@@ -242,7 +245,8 @@ impl PPU {
                     data = self.ppu_data_buffer;
                 }
 
-                self.vram_addr.register += if self.control.contains(PPUControl::INCREMENT_MODE) { 32 } else { 1 };
+                let increment_mode = (self.control.bits() & 0b100) >> 2;
+                self.vram_addr.register += if increment_mode == 1 { 32 } else { 1 };
 
                 data
             },
@@ -296,7 +300,9 @@ impl PPU {
             },
             0x0007 => {
                 self.ppu_write(self.vram_addr.register, data);
-                self.vram_addr.register += if self.control.contains(PPUControl::INCREMENT_MODE) { 32 } else { 1 };
+
+                let increment_mode = (self.control.bits() & 0b100) >> 2;
+                self.vram_addr.register += if increment_mode == 1 { 32 } else { 1 };
             },
             _ => panic!("invalid CPU write from PPU")
         }
@@ -523,28 +529,24 @@ impl PPU {
                 } else if cur_cycle == 7 {
                     self.increment_scroll_x();
                 }
-
-                if self.cycle == 256 {
-                    self.increment_scroll_y();
-                }
-
-                if self.cycle == 257 {
-                    self.load_background_shifters();
-                    self.transfer_address_x();
-                }
-
-                if self.cycle == 338 || self.cycle == 340 {
-                    self.bg_next_tile_id = self.ppu_read(0x2000 | (self.vram_addr.register & 0x0fff));
-                }
-
-                if self.scanline == -1 && self.cycle >= 280 && self.cycle < 305 {
-                    self.transfer_address_y();
-                }
             }
-        }
 
-        if self.scanline == 240 {
-            // noop
+            if self.cycle == 256 {
+                self.increment_scroll_y();
+            }
+
+            if self.cycle == 257 {
+                self.load_background_shifters();
+                self.transfer_address_x();
+            }
+
+            if self.cycle == 338 || self.cycle == 340 {
+                self.bg_next_tile_id = self.ppu_read(0x2000 | (self.vram_addr.register & 0x0fff));
+            }
+
+            if self.scanline == -1 && self.cycle >= 280 && self.cycle < 305 {
+                self.transfer_address_y();
+            }
         }
 
         if self.scanline >= 241 && self.scanline < 261 {
