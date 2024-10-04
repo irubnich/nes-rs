@@ -414,51 +414,45 @@ impl PPU {
 
     fn increment_scroll_x(&mut self) {
         if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
-            let coarse_x = self.vram_addr.register & 0b11111;
-            if coarse_x == 31 {
-                self.vram_addr.register &= !0x001F;
-                self.vram_addr.register ^= 0x0400;
+            if (self.vram_addr.register & 0x001F) == 31 {
+                self.vram_addr.register = (self.vram_addr.register & !0x001F) ^ 0x0400;
             } else {
-                self.vram_addr.register = self.vram_addr.register.wrapping_add(1);
+                self.vram_addr.register += 1;
             }
         }
     }
 
     fn increment_scroll_y(&mut self) {
         if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
-            let fine_y = (self.vram_addr.register & 0x7000) >> 12;
-
-            if fine_y < 7 {
-                let new_fine_y_mask = (fine_y.wrapping_add(1)) << 12;
-                self.vram_addr.register |= new_fine_y_mask;
-            } else {
+            if (self.vram_addr.register & 0x7000) == 0x7000 {
                 self.vram_addr.register &= !0x7000;
-
-                let coarse_y = (self.vram_addr.register & 0x03E0) >> 5;
-                if coarse_y == 29 {
-                    self.vram_addr.register &= !0x03E0;
+                let mut y = (self.vram_addr.register & 0x03E0) >> 5;
+                if y == 29 {
+                    y = 0;
                     self.vram_addr.register ^= 0x0800;
-                } else if coarse_y == 31 {
-                    self.vram_addr.register &= !0x03E0;
+                } else if y == 31 {
+                    y = 0;
                 } else {
-                    let new_coarse_y = coarse_y.wrapping_add(1);
-                    self.vram_addr.register |= (new_coarse_y) << 5;
+                    y += 1;
                 }
+                self.vram_addr.register = (self.vram_addr.register & !0x03E0) | (y << 5);
+            } else {
+                self.vram_addr.register += 0x1000;
             }
         }
     }
 
     fn transfer_address_x(&mut self) {
         if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
-            let tram_val = 0b000010000011111 & self.tram_addr.register;
-            self.vram_addr.register |= tram_val;
+            let x_mask = 0x0400 | 0x001F;
+            self.vram_addr.register = (self.vram_addr.register & !x_mask) | (self.tram_addr.register & x_mask);
         }
     }
 
     fn transfer_address_y(&mut self) {
         if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
-            let tram_val = 0b111101111100000 & self.tram_addr.register;
-            self.vram_addr.register |= tram_val;
+            let y_mask = 0x7000 | 0x0800 | 0x03E0;
+            self.vram_addr.register = (self.vram_addr.register & !y_mask) | (self.tram_addr.register & y_mask);
         }
     }
 
