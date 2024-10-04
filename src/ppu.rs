@@ -34,13 +34,15 @@ pub struct PPU {
     ppu_data_buffer: u8,
     fine_x: u8,
 
-    bg_next_tile_id: u8,
-    bg_next_tile_attrib: u8,
-    bg_next_tile_lsb: u8,
-    bg_next_tile_msb: u8,
+    prev_palette: u8,
+    curr_palette: u8,
+    next_palette: u8,
+    tile_lo: u8,
+    tile_hi: u8,
+    tile_addr: u16,
 
-    bg_shifter_pattern_lo: u16,
-    bg_shifter_pattern_hi: u16,
+    tile_shift_lo: u16,
+    tile_shift_hi: u16,
     bg_shifter_attrib_lo: u16,
     bg_shifter_attrib_hi: u16,
 }
@@ -199,14 +201,16 @@ impl PPU {
             ppu_data_buffer: 0,
             nmi: false,
             fine_x: 0,
-            bg_next_tile_attrib: 0,
-            bg_next_tile_id: 0,
-            bg_next_tile_lsb: 0,
-            bg_next_tile_msb: 0,
+            prev_palette: 0,
+            curr_palette: 0,
+            next_palette: 0,
+            tile_lo: 0,
+            tile_hi: 0,
+            tile_addr: 0,
             bg_shifter_attrib_hi: 0,
             bg_shifter_attrib_lo: 0,
-            bg_shifter_pattern_hi: 0,
-            bg_shifter_pattern_lo: 0,
+            tile_shift_hi: 0,
+            tile_shift_lo: 0,
         };
 
         ppu
@@ -456,91 +460,78 @@ impl PPU {
         }
     }
 
-    fn load_background_shifters(&mut self) {
-        self.bg_shifter_pattern_lo = (self.bg_shifter_pattern_lo & 0xFF00) | u16::from(self.bg_next_tile_lsb);
-        self.bg_shifter_pattern_hi = (self.bg_shifter_pattern_hi & 0xFF00) | u16::from(self.bg_next_tile_msb);
-        self.bg_shifter_attrib_lo = (self.bg_shifter_attrib_lo & 0xFF00) | u16::from(if self.bg_next_tile_attrib & 0b01 > 0 { 0xFFu16 } else { 0x00 });
-        self.bg_shifter_attrib_hi = (self.bg_shifter_attrib_hi & 0xFF00) | u16::from(if self.bg_next_tile_attrib & 0b10 > 0 { 0xFFu16 } else { 0x00 });
+    pub fn fetch_bg_nt_byte(&mut self) {
+        self.prev_palette = self.curr_palette;
+        self.curr_palette = self.next_palette;
+
+        self.tile_shift_lo |= u16::from(self.tile_lo);
+        self.tile_shift_hi |= u16::from(self.tile_hi);
+
+        let addr = 0x2000 | ((self.vram_addr.register & 0x3FFF) & 0x0FFF);
+        let tile_index = u16::from(self.ppu_read(addr));
+
+        let bg_select: u16 = self.control.contains(PPUControl::PATTERN_BACKGROUND) as u16 * 0x1000;
+        let fine_y = self.vram_addr.register >> 12;
+
+        self.tile_addr = bg_select | tile_index << 4 | fine_y;
     }
 
-    fn update_shifters(&mut self) {
-        if self.mask.contains(PPUMask::RENDER_BACKGROUND) {
-            self.bg_shifter_pattern_lo <<= 1;
-            self.bg_shifter_pattern_hi <<= 1;
-            self.bg_shifter_attrib_lo <<= 1;
-            self.bg_shifter_attrib_hi <<= 1;
+    pub fn fetch_bg_attr_byte(&mut self) {
+        let nametable_select = self.vram_addr.register & (0x0400 | 0x0800);
+        let y_bits = (self.vram_addr.register >> 4) & 0x38;
+        let x_bits = (self.vram_addr.register >> 2) & 0x07;
+        let addr = 0x23C0 | nametable_select | y_bits | x_bits;
+
+        let shift = (self.vram_addr.register & 0x02) | ((self.vram_addr.register >> 4) & 0x04);
+
+        self.next_palette = (self.ppu_read(addr) >> shift) & 0x03;
+    }
+
+    pub fn fetch_background(&mut self) {
+        match self.cycle & 0x07 {
+            1 => self.fetch_bg_nt_byte(),
+            3 => self.fetch_bg_attr_byte(),
+            5 => self.tile_lo = self.ppu_read(self.tile_addr),
+            7 => self.tile_hi = self.ppu_read(self.tile_addr + 8),
+            _ => (),
         }
     }
 
     pub fn clock(&mut self) {
-        if self.scanline >= -1 && self.scanline < 240 {
-            if self.scanline == 0 && self.cycle == 0 {
-                self.cycle = 1;
-            }
+        let cycle = self.cycle;
+        let scanline = self.scanline;
+        let visible_cycle = matches!(cycle, 1..=256);
+        let bg_prefetch_cycle = matches!(cycle, 321..=336);
+        let bg_fetch_cycle = bg_prefetch_cycle || visible_cycle;
+        let visible_scanline = scanline <= 239;
 
-            if self.scanline == -1 && self.cycle == 1 {
-                self.status.set(PPUStatus::VERTICAL_BLANK, false);
-            }
+        if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
+            let render_scanline = visible_scanline; // || prerender_scanline
 
-            if (self.cycle >= 2 && self.cycle < 258) || (self.cycle >= 321 && self.cycle < 338) {
-                self.update_shifters();
+            if render_scanline {
+                let bg_dummy_cycle = matches!(cycle, 337..=340);
 
-                let cur_cycle = (self.cycle - 1) % 8;
-                if cur_cycle == 0 {
-                    self.load_background_shifters();
+                if bg_fetch_cycle {
+                    self.fetch_background();
 
-                    self.bg_next_tile_id = self.ppu_read(0x2000 | (self.vram_addr.register & 0x0FFF));
-                } else if cur_cycle == 2 {
-                    let coarse_x = self.vram_addr.register & 0b11111;
-                    let coarse_y = (self.vram_addr.register & 0x03E0) >> 5;
-                    let nametable_y = (self.vram_addr.register & 0b000_10_00000_00000) >> 11;
-                    let nametable_x = (self.vram_addr.register & 0b000_01_00000_00000) >> 10;
-
-                    let addr = 0x23C0 | (nametable_y << 11) | (nametable_x << 10) | ((coarse_y >> 2) << 3) | (coarse_x >> 2);
-                    self.bg_next_tile_attrib = self.ppu_read(addr);
-
-                    if coarse_y & 0x02 > 0 {
-                        self.bg_next_tile_attrib >>= 4;
+                    if cycle & 0x07 == 0x00 {
+                        self.increment_scroll_x();
                     }
+                } else if bg_dummy_cycle {
+                    self.fetch_bg_nt_byte();
+                }
 
-                    if coarse_x & 0x02 > 0 {
-                        self.bg_next_tile_attrib >>= 2;
-                    }
-
-                    self.bg_next_tile_attrib &= 0x03;
-                } else if cur_cycle == 4 {
-                    let pattern_bg_bit = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1u16 } else { 0 };
-                    let fine_y = (self.vram_addr.register & 0x7000) >> 12;
-                    let addr = (pattern_bg_bit << 12).wrapping_add(u16::from(self.bg_next_tile_id) << 4).wrapping_add(fine_y);
-
-                    self.bg_next_tile_lsb = self.ppu_read(addr);
-                } else if cur_cycle == 6 {
-                    let pattern_bg_bit = if self.control.intersects(PPUControl::PATTERN_BACKGROUND) { 1u16 } else { 0 };
-                    let fine_y = (self.vram_addr.register & 0x7000) >> 12;
-                    let addr = (pattern_bg_bit << 12).wrapping_add(u16::from(self.bg_next_tile_id) << 4).wrapping_add(fine_y).wrapping_add(8);
-
-                    self.bg_next_tile_msb = self.ppu_read(addr);
-                } else if cur_cycle == 7 {
-                    self.increment_scroll_x();
+                match cycle {
+                    256 => self.increment_scroll_y(),
+                    257 => self.transfer_address_x(),
+                    _ => (),
                 }
             }
+        }
 
-            if self.cycle == 256 {
-                self.increment_scroll_y();
-            }
-
-            if self.cycle == 257 {
-                self.load_background_shifters();
-                self.transfer_address_x();
-            }
-
-            if self.cycle == 338 || self.cycle == 340 {
-                self.bg_next_tile_id = self.ppu_read(0x2000 | (self.vram_addr.register & 0x0fff));
-            }
-
-            if self.scanline == -1 && self.cycle >= 280 && self.cycle < 305 {
-                self.transfer_address_y();
-            }
+        if bg_fetch_cycle {
+            self.tile_shift_lo <<= 1;
+            self.tile_shift_hi <<= 1;
         }
 
         if self.scanline >= 241 && self.scanline < 261 {
@@ -558,8 +549,8 @@ impl PPU {
 
         if self.mask.contains(PPUMask::RENDER_BACKGROUND) {
             let bit_mux: u16 = 0x8000 >> self.fine_x;
-            let p0_pixel: u8 = if self.bg_shifter_pattern_lo & bit_mux > 0 { 1 } else { 0 };
-            let p1_pixel: u8 = if self.bg_shifter_pattern_hi & bit_mux > 0 { 1 } else { 0 };
+            let p0_pixel: u8 = if self.tile_shift_lo & bit_mux > 0 { 1 } else { 0 };
+            let p1_pixel: u8 = if self.tile_shift_hi & bit_mux > 0 { 1 } else { 0 };
             bg_pixel = (p1_pixel << 1) | p0_pixel;
 
             let bg_pal0 = if self.bg_shifter_attrib_lo & bit_mux > 0 { 1 } else { 0 };
