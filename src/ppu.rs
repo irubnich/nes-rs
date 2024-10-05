@@ -327,17 +327,22 @@ impl PPU {
         if read_only {
             println!("read only");
         }
+
         match addr {
             0x0000 => 0x00,
             0x0001 => 0x00,
             0x0002 => {
+                let data = (self.status.bits() & 0xE0) | (self.ppu_data_buffer & 0x1F);
+
                 if read_only {
-                    return self.status.bits();
+                    return data;
                 }
 
-                let data = (self.status.bits() & 0xE0) | (self.ppu_data_buffer & 0x1F);
-                self.status.set(PPUStatus::VERTICAL_BLANK, false);
+                self.stop_vblank();
                 self.address_latch = 0;
+
+                self.ppu_data_buffer |= self.status.bits() & 0xE0;
+
                 data
             },
             0x0003 => 0x00,
@@ -349,17 +354,18 @@ impl PPU {
                     return 0x00;
                 }
 
-                let mut data = self.ppu_data_buffer;
-                self.ppu_data_buffer = self.ppu_read(self.scroll.v);
+                let addr = self.scroll.addr();
+                self.increment_vram_addr();
 
-                if self.scroll.v >= 0x3F00 {
-                    data = self.ppu_data_buffer;
-                }
+                let val= self.ppu_read(addr);
+                let val = if addr < 0x3F00 {
+                    val
+                } else {
+                    self.ppu_data_buffer = self.ppu_read(addr - 0x1000);
+                    val | (self.ppu_data_buffer & 0xC0)
+                };
 
-                let increment_mode = (self.control.bits() & 0b100) >> 2;
-                self.scroll.v += if increment_mode == 1 { 32 } else { 1 };
-
-                data
+                val
             },
             _ => panic!("invalid CPU read from PPU")
         }
@@ -411,10 +417,9 @@ impl PPU {
                 self.scroll.write_latch = !self.scroll.write_latch;
             },
             0x0007 => {
-                self.ppu_write(self.scroll.v, data);
-
-                let increment_mode = (self.control.bits() & 0b100) >> 2;
-                self.scroll.v += if increment_mode == 1 { 32 } else { 1 };
+                let addr = self.scroll.addr();
+                self.increment_vram_addr();
+                self.ppu_write(addr, data);
             },
             _ => panic!("invalid CPU write from PPU")
         }
@@ -522,6 +527,17 @@ impl PPU {
         self.status = PPUStatus::empty();
         self.mask = Mask::new();
         self.control = PPUControl::empty();
+    }
+
+    pub fn increment_vram_addr(&mut self) {
+        if self.mask.rendering_enabled && (self.scanline == 261 || self.scanline <= 239) {
+            self.scroll.increment_x();
+            self.scroll.increment_y();
+        } else {
+            let increment_mode = (self.control.bits() & 0b100) >> 2;
+            let val = if increment_mode == 1 { 32 } else { 1 };
+            self.scroll.set_v(self.scroll.v.wrapping_add(val));
+        }
     }
 
     pub fn fetch_bg_nt_byte(&mut self) {
