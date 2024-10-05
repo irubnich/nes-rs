@@ -201,6 +201,10 @@ impl Scroll {
         self.set_v((self.v & !y_mask) | (self.t & y_mask));
     }
 
+    pub fn write_nametable_select(&mut self, val: u8) {
+        let nt_mask = 0x0800 | 0x0400;
+        self.t = (self.t & !nt_mask) | (u16::from(val) & 0x03) << 10;
+    }
 }
 
 impl PPU {
@@ -365,9 +369,7 @@ impl PPU {
         match addr {
             0x0000 => {
                 self.control = PPUControl::from_bits_truncate(data);
-
-                let d = u16::from(data) & 0b11;
-                self.scroll.t |= d << 10;
+                self.scroll.write_nametable_select(data);
             },
             0x0001 => {
                 self.mask.write(data);
@@ -396,17 +398,17 @@ impl PPU {
                 self.scroll.write_latch = !self.scroll.write_latch;
             },
             0x0006 => {
-                if self.address_latch == 0 {
-                    let val = (u16::from(data) & 0x3F) << 8;
-                    self.scroll.t = val | (self.scroll.t & 0x00FF);
-
-                    self.address_latch = 1;
-                } else {
-                    self.scroll.t = (self.scroll.t & 0xFF00) | u16::from(data);
+                if self.scroll.write_latch {
+                    let lo_bits_mask = 0x7F00;
+                    self.scroll.t = (self.scroll.t & lo_bits_mask) | u16::from(data);
                     self.scroll.v = self.scroll.t;
-
-                    self.address_latch = 0;
+                } else {
+                    let hi_bits_mask = 0x00FF;
+                    let six_bits_mask = 0x003F;
+                    self.scroll.t = (self.scroll.t & hi_bits_mask) | ((u16::from(data) & six_bits_mask) << 8);
                 }
+
+                self.scroll.write_latch = !self.scroll.write_latch;
             },
             0x0007 => {
                 self.ppu_write(self.scroll.v, data);
