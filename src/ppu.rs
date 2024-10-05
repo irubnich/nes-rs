@@ -145,8 +145,8 @@ impl Control {
         self.master_slave = self.bits.contains(PPUControl::MASTER_SLAVE) as u8;
         self.nmi_enabled = self.bits.contains(PPUControl::NMI_ENABLE);
         self.nametable_addr = match self.bits.bits() & 0b11 {
-            0b00 => 0x01,
-            0b01 => 0x02,
+            0b00 => 0x2000,
+            0b01 => 0x2400,
             0b10 => 0x2800,
             0b11 => 0x2C00,
             _ => unreachable!("impossible"),
