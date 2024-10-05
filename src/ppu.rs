@@ -24,7 +24,7 @@ pub struct PPU {
     cart: Rc<RefCell<Cartridge>>,
 
     status: PPUStatus,
-    mask: PPUMask,
+    mask: Mask,
     control: PPUControl,
     vram_addr: LoopyRegister,
     tram_addr: LoopyRegister,
@@ -57,16 +57,53 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(Copy, Clone, Debug)]
+    #[derive(Copy, Clone, Debug, Default)]
     pub struct PPUMask: u8 {
         const GRAYSCALE = 1;
-        const RENDER_BACKGROUND_LEFT = 1 << 1;
-        const RENDER_SPRITES_LEFT = 1 << 2;
-        const RENDER_BACKGROUND = 1 << 3;
-        const RENDER_SPRITES = 1 << 4;
-        const ENHANCE_RED = 1 << 5;
-        const ENHANCE_GREEN = 1 << 6;
-        const ENHANCE_BLUE = 1 << 7;
+        const SHOW_LEFT_BG = 1 << 1;
+        const SHOW_LEFT_SPR = 1 << 2;
+        const SHOW_BG = 1 << 3;
+        const SHOW_SPR = 1 << 4;
+        const EMPHASIZE_RED = 1 << 5;
+        const EMPHASIZE_GREEN = 1 << 6;
+        const EMPHASIZE_BLUE = 1 << 7;
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Mask {
+    pub rendering_enabled: bool,
+    pub grayscale: u8,
+    pub emphasis: u16,
+    pub show_left_bg: bool,
+    pub show_left_spr: bool,
+    pub show_bg: bool,
+    pub show_spr: bool,
+    bits: PPUMask,
+}
+
+impl Mask {
+    pub fn new() -> Self {
+        let mut mask = Self {
+            ..Default::default()
+        };
+        mask.write(0);
+        mask
+    }
+
+    pub fn write(&mut self, val: u8) {
+        self.bits = PPUMask::from_bits_truncate(val);
+        self.grayscale = if self.bits.contains(PPUMask::GRAYSCALE) {
+            0x30
+        } else {
+            0x3F
+        };
+        self.show_left_bg = self.bits.contains(PPUMask::SHOW_LEFT_BG);
+        self.show_left_spr = self.bits.contains(PPUMask::SHOW_LEFT_SPR);
+        self.show_bg = self.bits.contains(PPUMask::SHOW_BG);
+        self.show_spr = self.bits.contains(PPUMask::SHOW_SPR);
+        self.rendering_enabled = self.show_bg || self.show_spr;
+        self.emphasis = 0;
     }
 }
 
@@ -193,7 +230,7 @@ impl PPU {
             cart,
 
             status: PPUStatus::empty(),
-            mask: PPUMask::empty(),
+            mask: Mask::new(),
             control: PPUControl::empty(),
             vram_addr: LoopyRegister::new(),
             tram_addr: LoopyRegister::new(),
@@ -267,7 +304,7 @@ impl PPU {
                 self.tram_addr.register |= d << 10;
             },
             0x0001 => {
-                self.mask = PPUMask::from_bits_truncate(data);
+                self.mask.write(data);
             },
             0x0002 => (),
             0x0003 => (),
@@ -412,52 +449,44 @@ impl PPU {
         self.scanline = 0;
         self.cycle = 0;
         self.status = PPUStatus::empty();
-        self.mask = PPUMask::empty();
+        self.mask = Mask::new();
         self.control = PPUControl::empty();
     }
 
-    fn increment_scroll_x(&mut self) {
-        if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
-            if (self.vram_addr.register & 0x001F) == 31 {
-                self.vram_addr.register = (self.vram_addr.register & !0x001F) ^ 0x0400;
+    fn increment_x(&mut self) {
+        if (self.vram_addr.register & 0x001F) == 31 {
+            self.vram_addr.register = (self.vram_addr.register & !0x001F) ^ 0x0400;
+        } else {
+            self.vram_addr.register += 1;
+        }
+    }
+
+    fn increment_y(&mut self) {
+        if (self.vram_addr.register & 0x7000) == 0x7000 {
+            self.vram_addr.register &= !0x7000;
+            let mut y = (self.vram_addr.register & 0x03E0) >> 5;
+            if y == 29 {
+                y = 0;
+                self.vram_addr.register ^= 0x0800;
+            } else if y == 31 {
+                y = 0;
             } else {
-                self.vram_addr.register += 1;
+                y += 1;
             }
+            self.vram_addr.register = (self.vram_addr.register & !0x03E0) | (y << 5);
+        } else {
+            self.vram_addr.register += 0x1000;
         }
     }
 
-    fn increment_scroll_y(&mut self) {
-        if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
-            if (self.vram_addr.register & 0x7000) == 0x7000 {
-                self.vram_addr.register &= !0x7000;
-                let mut y = (self.vram_addr.register & 0x03E0) >> 5;
-                if y == 29 {
-                    y = 0;
-                    self.vram_addr.register ^= 0x0800;
-                } else if y == 31 {
-                    y = 0;
-                } else {
-                    y += 1;
-                }
-                self.vram_addr.register = (self.vram_addr.register & !0x03E0) | (y << 5);
-            } else {
-                self.vram_addr.register += 0x1000;
-            }
-        }
+    fn copy_x(&mut self) {
+        let x_mask = 0x0400 | 0x001F;
+        self.vram_addr.register = (self.vram_addr.register & !x_mask) | (self.tram_addr.register & x_mask);
     }
 
-    fn transfer_address_x(&mut self) {
-        if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
-            let x_mask = 0x0400 | 0x001F;
-            self.vram_addr.register = (self.vram_addr.register & !x_mask) | (self.tram_addr.register & x_mask);
-        }
-    }
-
-    fn transfer_address_y(&mut self) {
-        if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
-            let y_mask = 0x7000 | 0x0800 | 0x03E0;
-            self.vram_addr.register = (self.vram_addr.register & !y_mask) | (self.tram_addr.register & y_mask);
-        }
+    fn copy_y(&mut self) {
+        let y_mask = 0x7000 | 0x0800 | 0x03E0;
+        self.vram_addr.register = (self.vram_addr.register & !y_mask) | (self.tram_addr.register & y_mask);
     }
 
     pub fn fetch_bg_nt_byte(&mut self) {
@@ -497,16 +526,17 @@ impl PPU {
         }
     }
 
-    pub fn clock(&mut self) {
+    pub fn tick(&mut self) {
         let cycle = self.cycle;
         let scanline = self.scanline;
         let visible_cycle = matches!(cycle, 1..=256);
         let bg_prefetch_cycle = matches!(cycle, 321..=336);
         let bg_fetch_cycle = bg_prefetch_cycle || visible_cycle;
         let visible_scanline = scanline <= 239;
+        let prerender_scanline = self.scanline == 261;
 
-        if self.mask.contains(PPUMask::RENDER_BACKGROUND) || self.mask.contains(PPUMask::RENDER_SPRITES) {
-            let render_scanline = visible_scanline; // || prerender_scanline
+        if self.mask.rendering_enabled {
+            let render_scanline = visible_scanline || prerender_scanline;
 
             if render_scanline {
                 let bg_dummy_cycle = matches!(cycle, 337..=340);
@@ -515,59 +545,112 @@ impl PPU {
                     self.fetch_background();
 
                     if cycle & 0x07 == 0x00 {
-                        self.increment_scroll_x();
+                        self.increment_x();
                     }
                 } else if bg_dummy_cycle {
                     self.fetch_bg_nt_byte();
                 }
 
+                if prerender_scanline {
+                    match cycle {
+                        280..=304 => {
+                            self.copy_y();
+                        },
+                        _ => (),
+                    }
+                }
+
                 match cycle {
-                    256 => self.increment_scroll_y(),
-                    257 => self.transfer_address_x(),
+                    256 => self.increment_y(),
+                    257 => self.copy_x(),
                     _ => (),
                 }
             }
+        }
+
+        if visible_cycle && visible_cycle { // && !skip_rendering
+            self.render_pixel();
         }
 
         if bg_fetch_cycle {
             self.tile_shift_lo <<= 1;
             self.tile_shift_hi <<= 1;
         }
+    }
 
-        if self.scanline >= 241 && self.scanline < 261 {
-            if self.scanline == 241 && self.cycle == 1 {
-                self.status.set(PPUStatus::VERTICAL_BLANK, true);
-            }
-
-            if self.control.contains(PPUControl::ENABLE_NMI) {
-                self.nmi = true;
-            }
+    fn start_vblank(&mut self) {
+        self.status.set(PPUStatus::VERTICAL_BLANK, true);
+        if self.control.contains(PPUControl::ENABLE_NMI) {
+            self.nmi = true;
         }
+    }
 
-        let mut bg_pixel: u8 = 0x00;
-        let mut bg_palette: u8 = 0x00;
+    fn stop_vblank(&mut self) {
+        self.status.set(PPUStatus::VERTICAL_BLANK, false);
+    }
 
-        if self.mask.contains(PPUMask::RENDER_BACKGROUND) {
-            let bit_mux: u16 = 0x8000 >> self.fine_x;
-            let p0_pixel: u8 = if self.tile_shift_lo & bit_mux > 0 { 1 } else { 0 };
-            let p1_pixel: u8 = if self.tile_shift_hi & bit_mux > 0 { 1 } else { 0 };
-            bg_pixel = (p1_pixel << 1) | p0_pixel;
+    pub fn clock(&mut self) -> usize {
+        let prerender_scanline = 261; // 331 alternative
+        let vblank_scanline = 241; // 291 alternative
 
-            let bg_pal0 = if self.bg_shifter_attrib_lo & bit_mux > 0 { 1 } else { 0 };
-            let bg_pal1 = if self.bg_shifter_attrib_hi & bit_mux > 0 { 1 } else { 0 };
-            bg_palette = (bg_pal1 << 1) | bg_pal0;
-        }
-
-        self.spr_screen.set_pixel(self.cycle - 1, self.scanline, self.get_color_from_palette_ram(bg_palette, bg_pixel));
-
-        self.cycle += 1;
-        if self.cycle >= 341 {
+        if self.cycle >= 340 {
             self.cycle = 0;
             self.scanline += 1;
-            if self.scanline >= 261 {
-                self.scanline = -1;
-                self.frame_complete = true;
+            if self.scanline == vblank_scanline - 1 {
+                // this is the post render scanline - do nothing?
+                // self.frame.increment();
+            } else {
+                self.scanline *= (self.scanline <= prerender_scanline) as i32;
             }
+        } else {
+            self.cycle += 1;
+            self.tick();
+
+            if self.cycle == 1 {
+                if self.scanline == vblank_scanline {
+                    self.start_vblank();
+                } else if self.scanline == prerender_scanline {
+                    self.stop_vblank();
+                    self.scanline = -1;
+                    self.frame_complete = true;
+                }
+            }
+        }
+
+        1
+    }
+
+    fn render_pixel(&mut self) {
+        let x = self.cycle - 1;
+        let y = self.scanline;
+        let addr = self.vram_addr.register & 0x3FFF;
+
+        let color = if self.mask.rendering_enabled || (addr & 0x3F00) != 0x3F00 {
+            let color = u16::from(self.pixel_color());
+            self.ppu_read(0x3F00 + (color & 0x03 > 0) as u16 * color)
+        } else {
+            self.ppu_read(addr)
+        };
+
+        let pixel = self.pal_screen[(u16::from(color & self.mask.grayscale) | self.mask.emphasis) as usize & 0x3F];
+        self.spr_screen.set_pixel(x, y, pixel);
+    }
+
+    fn pixel_color(&self) -> u8 {
+        let x = self.cycle - 1;
+
+        let left_clip_bg = x < 8 && !self.mask.show_left_bg;
+        let bg_color = if self.mask.show_bg && !left_clip_bg {
+            ((((self.tile_shift_hi << self.fine_x) & 0x8000) >> 14)
+                | (((self.tile_shift_lo << self.fine_x) & 0x8000) >> 15)) as u8
+        } else {
+            0
+        };
+
+        if (u16::from(self.fine_x) + ((x & 0x07) as u16)) < 8 {
+            self.prev_palette + bg_color
+        } else {
+            self.curr_palette + bg_color
         }
     }
 
