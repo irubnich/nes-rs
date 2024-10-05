@@ -25,7 +25,7 @@ pub struct PPU {
 
     status: PPUStatus,
     mask: Mask,
-    control: PPUControl,
+    control: Control,
     scroll: Scroll,
     pub nmi: bool,
 
@@ -105,16 +105,53 @@ impl Mask {
 }
 
 bitflags! {
-    #[derive(Copy, Clone, Debug)]
+    #[derive(Copy, Clone, Debug, Default)]
     pub struct PPUControl: u8 {
-        const NAMETABLE_X = 0b0000_0001;
-        const NAMETABLE_Y = 0b0000_0010;
-        const INCREMENT_MODE = 0b0000_0100;
-        const PATTERN_SPRITE = 0b0000_1000;
-        const PATTERN_BACKGROUND = 0b0001_0000;
-        const SPRITE_SIZE = 0b0010_0000;
-        const SLAVE_MODE = 0b0100_0000;
-        const ENABLE_NMI = 0b1000_0000;
+        const NAMETABLE1 = 0b0000_0001;
+        const NAMETABLE2 = 0b0000_0010;
+        const VRAM_INCREMENT = 0b0000_0100;
+        const SPR_SELECT = 0b0000_1000;
+        const BG_SELECT = 0b0001_0000;
+        const SPR_HEIGHT = 0b0010_0000;
+        const MASTER_SLAVE = 0b0100_0000;
+        const NMI_ENABLE = 0b1000_0000;
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct Control {
+    pub spr_select: u16,
+    pub bg_select: u16,
+    pub spr_height: u32,
+    pub master_slave: u8,
+    pub nmi_enabled: bool,
+    pub nametable_addr: u16,
+    pub vram_increment: u16,
+    bits: PPUControl,
+}
+
+impl Control {
+    pub fn new() -> Self {
+        let mut ctrl = Self::default();
+        ctrl.write(0);
+        ctrl
+    }
+
+    pub fn write(&mut self, val: u8) {
+        self.bits = PPUControl::from_bits_truncate(val);
+        self.spr_select = self.bits.contains(PPUControl::SPR_SELECT) as u16 * 0x1000;
+        self.bg_select = self.bits.contains(PPUControl::BG_SELECT) as u16 * 0x1000;
+        self.spr_height = self.bits.contains(PPUControl::SPR_HEIGHT) as u32 * 8 + 8;
+        self.master_slave = self.bits.contains(PPUControl::MASTER_SLAVE) as u8;
+        self.nmi_enabled = self.bits.contains(PPUControl::NMI_ENABLE);
+        self.nametable_addr = match self.bits.bits() & 0b11 {
+            0b00 => 0x01,
+            0b01 => 0x02,
+            0b10 => 0x2800,
+            0b11 => 0x2C00,
+            _ => unreachable!("impossible"),
+        };
+        self.vram_increment = self.bits.contains(PPUControl::VRAM_INCREMENT) as u16 * 31 + 1;
     }
 }
 
@@ -304,7 +341,7 @@ impl PPU {
 
             status: PPUStatus::empty(),
             mask: Mask::new(),
-            control: PPUControl::empty(),
+            control: Control::new(),
             scroll: Scroll::new(),
             address_latch: 0,
             ppu_data_buffer: 0,
@@ -374,7 +411,7 @@ impl PPU {
     pub fn cpu_write(&mut self, addr: u16, data: u8) {
         match addr {
             0x0000 => {
-                self.control = PPUControl::from_bits_truncate(data);
+                self.control.write(data);
                 self.scroll.write_nametable_select(data);
             },
             0x0001 => {
@@ -526,7 +563,7 @@ impl PPU {
         self.cycle = 0;
         self.status = PPUStatus::empty();
         self.mask = Mask::new();
-        self.control = PPUControl::empty();
+        self.control = Control::new();
     }
 
     pub fn increment_vram_addr(&mut self) {
@@ -534,9 +571,7 @@ impl PPU {
             self.scroll.increment_x();
             self.scroll.increment_y();
         } else {
-            let increment_mode = (self.control.bits() & 0b100) >> 2;
-            let val = if increment_mode == 1 { 32 } else { 1 };
-            self.scroll.set_v(self.scroll.v.wrapping_add(val));
+            self.scroll.set_v(self.scroll.v.wrapping_add(self.control.vram_increment));
         }
     }
 
@@ -550,9 +585,7 @@ impl PPU {
         let addr = 0x2000 | (self.scroll.addr() & 0x0FFF);
         let tile_index = u16::from(self.ppu_read(addr));
 
-        let bg_select: u16 = self.control.contains(PPUControl::PATTERN_BACKGROUND) as u16 * 0x1000;
-
-        self.tile_addr = bg_select | (tile_index << 4) | self.scroll.fine_y;
+        self.tile_addr = self.control.bg_select | (tile_index << 4) | self.scroll.fine_y;
     }
 
     pub fn fetch_bg_attr_byte(&mut self) {
@@ -625,7 +658,7 @@ impl PPU {
 
     fn start_vblank(&mut self) {
         self.status.set(PPUStatus::VERTICAL_BLANK, true);
-        if self.control.contains(PPUControl::ENABLE_NMI) {
+        if self.control.nmi_enabled {
             self.nmi = true;
         }
     }
