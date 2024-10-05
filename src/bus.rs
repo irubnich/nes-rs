@@ -9,6 +9,8 @@ pub struct Bus {
     pub memory: Memory,
     pub cartridge: Rc<RefCell<Cartridge>>,
     pub ppu: Rc<RefCell<PPU>>,
+    pub controller: [u8; 2],
+    pub controller_state: [u8; 2],
 }
 
 impl Bus {
@@ -19,6 +21,9 @@ impl Bus {
             self.memory.set_byte(addr & 0x07FF, data);
         } else if addr >= 0x2000 && addr <= 0x3FFF {
             self.ppu.borrow_mut().cpu_write(addr & 0x0007, data);
+        } else if addr >= 0x4016 && addr <= 0x4017 {
+            let idx = (addr & 0x0001) as usize;
+            self.controller_state[idx] = self.controller[idx];
         }
     }
 
@@ -30,6 +35,12 @@ impl Bus {
             self.memory.get_byte(addr & 0x07FF)
         } else if addr >= 0x2000 && addr <= 0x3FFF {
             self.ppu.borrow_mut().cpu_read(addr & 0x0007, read_only)
+        } else if addr >= 0x4016 && addr <= 0x4017 {
+            let idx = (addr & 0x0001) as usize;
+            let data = ((self.controller_state[idx] & 0x80) > 0) as u8;
+            self.controller_state[idx] <<= 1;
+
+            data
         } else {
             0x00
         }

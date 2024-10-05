@@ -130,6 +130,23 @@ impl olc::Application for Emulator {
     fn on_user_update(&mut self, elapsed_time: f32) -> Result<(), olc::Error> {
         olc::clear(olc::DARK_BLUE);
 
+        self.cpu.bus.controller[0] = 0x00;
+        self.cpu.bus.controller[0] |= if olc::get_key(olc::Key::X).held { 0x80 } else { 0x00 };
+        self.cpu.bus.controller[0] |= if olc::get_key(olc::Key::Z).held { 0x40 } else { 0x00 };
+        self.cpu.bus.controller[0] |= if olc::get_key(olc::Key::A).held { 0x20 } else { 0x00 };
+        self.cpu.bus.controller[0] |= if olc::get_key(olc::Key::S).held { 0x10 } else { 0x00 };
+        self.cpu.bus.controller[0] |= if olc::get_key(olc::Key::UP).held { 0x08 } else { 0x00 };
+        self.cpu.bus.controller[0] |= if olc::get_key(olc::Key::DOWN).held { 0x04 } else { 0x00 };
+        self.cpu.bus.controller[0] |= if olc::get_key(olc::Key::LEFT).held { 0x02 } else { 0x00 };
+        self.cpu.bus.controller[0] |= if olc::get_key(olc::Key::RIGHT).held { 0x01 } else { 0x00 };
+
+        if olc::get_key(olc::Key::SPACE).pressed { self.emulation_run = !self.emulation_run }
+        if olc::get_key(olc::Key::R).pressed { self.reset(); }
+        if olc::get_key(olc::Key::P).pressed {
+            self.selected_palette += 1;
+            self.selected_palette &= 0x07;
+        }
+
         if self.emulation_run {
             if self.residual_time > 0.0 {
                 self.residual_time -= elapsed_time;
@@ -177,13 +194,6 @@ impl olc::Application for Emulator {
             }
         }
 
-        if olc::get_key(olc::Key::SPACE).pressed { self.emulation_run = !self.emulation_run }
-        if olc::get_key(olc::Key::R).pressed { self.reset(); }
-        if olc::get_key(olc::Key::P).pressed {
-            self.selected_palette += 1;
-            self.selected_palette &= 0x07;
-        }
-
         self.draw_cpu(516, 2);
         //self.draw_code(516, 72, 26);
         //self.draw_ram(516, 100, &mut 0x0000, 16, 16);
@@ -222,7 +232,7 @@ impl olc::Application for Emulator {
 }
 
 fn main() {
-    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("smb.nes"))));
+    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("nestest.nes"))));
 
     let ppu = Rc::new(RefCell::new(PPU::new(cartridge.clone())));
 
@@ -230,6 +240,8 @@ fn main() {
         cartridge: cartridge.clone(),
         memory: Memory::new(),
         ppu: ppu.clone(),
+        controller: [0; 2],
+        controller_state: [0; 2],
     };
     let cpu = CPU::new(bus);
     let mut emulator = Emulator {
