@@ -23,15 +23,15 @@ pub struct PPU {
 
     cart: Rc<RefCell<Cartridge>>,
 
-    status: PPUStatus,
+    status: Status,
     mask: Mask,
     control: Control,
     scroll: Scroll,
     pub nmi: bool,
 
-    address_latch: u8,
     ppu_data_buffer: u8,
     fine_x: u8,
+    vram_buffer: u8,
 
     prev_palette: u8,
     curr_palette: u8,
@@ -45,11 +45,48 @@ pub struct PPU {
 }
 
 bitflags! {
-    #[derive(Copy, Clone, Debug)]
+    #[derive(Copy, Clone, Debug, Default)]
     pub struct PPUStatus: u8 {
-        const SPRITE_OVERFLOW = 0b0010_0000;
-        const SPRITE_ZERO_HIT = 0b0100_0000;
-        const VERTICAL_BLANK = 0b1000_0000;
+        const UNUSED1 = 0x01;
+        const UNUSED2 = 0x02;
+        const UNUSED3 = 0x04;
+        const UNUSED4 = 0x08;
+        const UNUSED5 = 0x10;
+        const SPR_OVERFLOW = 0x20;
+        const SPR_ZERO_HIT = 0x40;
+        const VBLANK_STARTED = 0x80;
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct Status {
+    pub spr_overflow: bool,
+    pub spr_zero_hit: bool,
+    pub in_vblank: bool,
+    bits: PPUStatus,
+}
+
+impl Status {
+    pub fn new() -> Self {
+        let mut status = Self::default();
+        status.write(0);
+        status
+    }
+
+    pub fn write(&mut self, val: u8) {
+        self.bits = PPUStatus::from_bits_truncate(val);
+        self.spr_overflow = self.bits.contains(PPUStatus::SPR_OVERFLOW);
+        self.spr_zero_hit = self.bits.contains(PPUStatus::SPR_ZERO_HIT);
+        self.in_vblank = self.bits.contains(PPUStatus::VBLANK_STARTED);
+    }
+
+    pub fn read(&self) -> u8 {
+        self.bits.bits()
+    }
+
+    pub fn set_in_vblank(&mut self, val: bool) {
+        self.bits.set(PPUStatus::VBLANK_STARTED, val);
+        self.in_vblank = val;
     }
 }
 
@@ -339,12 +376,12 @@ impl PPU {
             cycle: 0,
             cart,
 
-            status: PPUStatus::empty(),
+            status: Status::new(),
             mask: Mask::new(),
             control: Control::new(),
             scroll: Scroll::new(),
-            address_latch: 0,
             ppu_data_buffer: 0,
+            vram_buffer: 0,
             nmi: false,
             fine_x: 0,
             prev_palette: 0,
@@ -369,16 +406,13 @@ impl PPU {
             0x0000 => 0x00,
             0x0001 => 0x00,
             0x0002 => {
-                let data = (self.status.bits() & 0xE0) | (self.ppu_data_buffer & 0x1F);
-
+                let data = self.peek_status();
                 if read_only {
                     return data;
                 }
 
                 self.stop_vblank();
-                self.address_latch = 0;
-
-                self.ppu_data_buffer |= self.status.bits() & 0xE0;
+                self.scroll.write_latch = false;
 
                 data
             },
@@ -396,9 +430,11 @@ impl PPU {
 
                 let val= self.ppu_read(addr);
                 let val = if addr < 0x3F00 {
-                    val
+                    let buffer = self.vram_buffer;
+                    self.vram_buffer = val;
+                    buffer
                 } else {
-                    self.ppu_data_buffer = self.ppu_read(addr - 0x1000);
+                    self.vram_buffer = self.ppu_read(addr - 0x1000);
                     val | (self.ppu_data_buffer & 0xC0)
                 };
 
@@ -557,11 +593,11 @@ impl PPU {
     }
 
     pub fn reset(&mut self) {
-        self.address_latch = 0;
+        self.scroll.write_latch = false;
         self.ppu_data_buffer = 0;
         self.scanline = 0;
         self.cycle = 0;
-        self.status = PPUStatus::empty();
+        self.status = Status::new();
         self.mask = Mask::new();
         self.control = Control::new();
     }
@@ -657,14 +693,15 @@ impl PPU {
     }
 
     fn start_vblank(&mut self) {
-        self.status.set(PPUStatus::VERTICAL_BLANK, true);
+        self.status.set_in_vblank(true);
         if self.control.nmi_enabled {
             self.nmi = true;
         }
     }
 
     fn stop_vblank(&mut self) {
-        self.status.set(PPUStatus::VERTICAL_BLANK, false);
+        self.status.set_in_vblank(false);
+        self.nmi = false;
     }
 
     pub fn clock(&mut self) -> usize {
@@ -730,6 +767,10 @@ impl PPU {
         } else {
             self.curr_palette + bg_color
         }
+    }
+
+    fn peek_status(&self) -> u8 {
+        (self.status.read() & 0xE0) | (self.ppu_data_buffer & 0x1F)
     }
 
     pub fn get_pattern_table(&self, i: u8) -> &olc::Sprite {
