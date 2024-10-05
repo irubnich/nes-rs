@@ -26,8 +26,7 @@ pub struct PPU {
     status: PPUStatus,
     mask: Mask,
     control: PPUControl,
-    vram_addr: LoopyRegister,
-    tram_addr: LoopyRegister,
+    scroll: Scroll,
     pub nmi: bool,
 
     address_latch: u8,
@@ -43,8 +42,6 @@ pub struct PPU {
 
     tile_shift_lo: u16,
     tile_shift_hi: u16,
-    bg_shifter_attrib_lo: u16,
-    bg_shifter_attrib_hi: u16,
 }
 
 bitflags! {
@@ -132,6 +129,91 @@ impl LoopyRegister {
             register: 0x0000,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct Scroll {
+    pub fine_x: u16,
+    pub coarse_x: u16,
+    pub fine_y: u16,
+    pub coarse_y: u16,
+    pub v: u16,
+    pub t: u16,
+    pub write_latch: bool,
+}
+
+impl Scroll {
+    pub const fn new() -> Self {
+        Self {
+            v: 0,
+            t: 0,
+            fine_x: 0,
+            coarse_x: 0,
+            fine_y: 0,
+            coarse_y: 0,
+            write_latch: false,
+        }
+    }
+
+    pub const fn attr_addr(&self) -> u16 {
+        let nametable_select = self.v & (0x0400 | 0x0800);
+        let y_bits = (self.v >> 4) & 0x38;
+        let x_bits = (self.v >> 2) & 0x07;
+        0x23C0 | nametable_select | y_bits | x_bits
+    }
+
+    pub const fn attr_shift(&self) -> u16 {
+        (self.v & 0x02) | ((self.v >> 4) & 0x04)
+    }
+
+    pub const fn addr(&self) -> u16 {
+        self.v & 0x3FFF
+    }
+
+    pub fn set_v(&mut self, val: u16) {
+        self.v = val;
+        self.coarse_x = self.v & 0x001F;
+        self.fine_y = self.v >> 12;
+        self.coarse_y = (self.v & 0x03E0) >> 5;
+    }
+
+    pub fn increment_x(&mut self) {
+        if (self.v & 0x001F) == 31 {
+            self.set_v((self.v & !0x001F) ^ 0x0400);
+        } else {
+            self.set_v(self.v + 1);
+        }
+    }
+
+    pub fn increment_y(&mut self) {
+        if (self.v & 0x7000) == 0x7000 {
+            self.set_v(self.v & !0x7000);
+            let mut y = (self.v & 0x03E0) >> 5;
+            if y == 29 {
+                y = 0;
+                self.set_v(self.v ^ 0x0800);
+            } else if y == 31 {
+                y = 0;
+            } else {
+                y += 1;
+            }
+
+            self.set_v((self.v & !0x03E0) | (y << 5));
+        } else {
+            self.set_v(self.v + 0x1000);
+        }
+    }
+
+    pub fn copy_x(&mut self) {
+        let x_mask = 0x0400 | 0x001F;
+        self.set_v((self.v & !x_mask) | (self.t & x_mask));
+    }
+
+    pub fn copy_y(&mut self) {
+        let y_mask = 0x7000 | 0x0800 | 0x03E0;
+        self.set_v((self.v & !y_mask) | (self.t & y_mask));
+    }
+
 }
 
 impl PPU {
@@ -232,8 +314,7 @@ impl PPU {
             status: PPUStatus::empty(),
             mask: Mask::new(),
             control: PPUControl::empty(),
-            vram_addr: LoopyRegister::new(),
-            tram_addr: LoopyRegister::new(),
+            scroll: Scroll::new(),
             address_latch: 0,
             ppu_data_buffer: 0,
             nmi: false,
@@ -244,8 +325,6 @@ impl PPU {
             tile_lo: 0,
             tile_hi: 0,
             tile_addr: 0,
-            bg_shifter_attrib_hi: 0,
-            bg_shifter_attrib_lo: 0,
             tile_shift_hi: 0,
             tile_shift_lo: 0,
         };
@@ -280,14 +359,14 @@ impl PPU {
                 }
 
                 let mut data = self.ppu_data_buffer;
-                self.ppu_data_buffer = self.ppu_read(self.vram_addr.register);
+                self.ppu_data_buffer = self.ppu_read(self.scroll.v);
 
-                if self.vram_addr.register >= 0x3F00 {
+                if self.scroll.v >= 0x3F00 {
                     data = self.ppu_data_buffer;
                 }
 
                 let increment_mode = (self.control.bits() & 0b100) >> 2;
-                self.vram_addr.register += if increment_mode == 1 { 32 } else { 1 };
+                self.scroll.v += if increment_mode == 1 { 32 } else { 1 };
 
                 data
             },
@@ -301,7 +380,7 @@ impl PPU {
                 self.control = PPUControl::from_bits_truncate(data);
 
                 let d = u16::from(data) & 0b11;
-                self.tram_addr.register |= d << 10;
+                self.scroll.t |= d << 10;
             },
             0x0001 => {
                 self.mask.write(data);
@@ -314,14 +393,14 @@ impl PPU {
                     self.fine_x = data & 0x07;
 
                     let coarse_x_val = u16::from(data) >> 3;
-                    self.tram_addr.register |= coarse_x_val;
+                    self.scroll.t |= coarse_x_val;
 
                     self.address_latch = 1;
                 } else {
-                    self.tram_addr.register |= (u16::from(data) & 0x07) << 12;
+                    self.scroll.t |= (u16::from(data) & 0x07) << 12;
 
                     let coarse_y_val = u16::from(data) >> 3;
-                    self.tram_addr.register |= coarse_y_val << 5;
+                    self.scroll.t |= coarse_y_val << 5;
 
                     self.address_latch = 0;
                 }
@@ -329,21 +408,21 @@ impl PPU {
             0x0006 => {
                 if self.address_latch == 0 {
                     let val = (u16::from(data) & 0x3F) << 8;
-                    self.tram_addr.register = val | (self.tram_addr.register & 0x00FF);
+                    self.scroll.t = val | (self.scroll.t & 0x00FF);
 
                     self.address_latch = 1;
                 } else {
-                    self.tram_addr.register = (self.tram_addr.register & 0xFF00) | u16::from(data);
-                    self.vram_addr.register = self.tram_addr.register;
+                    self.scroll.t = (self.scroll.t & 0xFF00) | u16::from(data);
+                    self.scroll.v = self.scroll.t;
 
                     self.address_latch = 0;
                 }
             },
             0x0007 => {
-                self.ppu_write(self.vram_addr.register, data);
+                self.ppu_write(self.scroll.v, data);
 
                 let increment_mode = (self.control.bits() & 0b100) >> 2;
-                self.vram_addr.register += if increment_mode == 1 { 32 } else { 1 };
+                self.scroll.v += if increment_mode == 1 { 32 } else { 1 };
             },
             _ => panic!("invalid CPU write from PPU")
         }
@@ -453,42 +532,6 @@ impl PPU {
         self.control = PPUControl::empty();
     }
 
-    fn increment_x(&mut self) {
-        if (self.vram_addr.register & 0x001F) == 31 {
-            self.vram_addr.register = (self.vram_addr.register & !0x001F) ^ 0x0400;
-        } else {
-            self.vram_addr.register += 1;
-        }
-    }
-
-    fn increment_y(&mut self) {
-        if (self.vram_addr.register & 0x7000) == 0x7000 {
-            self.vram_addr.register &= !0x7000;
-            let mut y = (self.vram_addr.register & 0x03E0) >> 5;
-            if y == 29 {
-                y = 0;
-                self.vram_addr.register ^= 0x0800;
-            } else if y == 31 {
-                y = 0;
-            } else {
-                y += 1;
-            }
-            self.vram_addr.register = (self.vram_addr.register & !0x03E0) | (y << 5);
-        } else {
-            self.vram_addr.register += 0x1000;
-        }
-    }
-
-    fn copy_x(&mut self) {
-        let x_mask = 0x0400 | 0x001F;
-        self.vram_addr.register = (self.vram_addr.register & !x_mask) | (self.tram_addr.register & x_mask);
-    }
-
-    fn copy_y(&mut self) {
-        let y_mask = 0x7000 | 0x0800 | 0x03E0;
-        self.vram_addr.register = (self.vram_addr.register & !y_mask) | (self.tram_addr.register & y_mask);
-    }
-
     pub fn fetch_bg_nt_byte(&mut self) {
         self.prev_palette = self.curr_palette;
         self.curr_palette = self.next_palette;
@@ -496,24 +539,18 @@ impl PPU {
         self.tile_shift_lo |= u16::from(self.tile_lo);
         self.tile_shift_hi |= u16::from(self.tile_hi);
 
-        let addr = 0x2000 | ((self.vram_addr.register & 0x3FFF) & 0x0FFF);
+        let addr = 0x2000 | (self.scroll.addr() & 0x0FFF);
         let tile_index = u16::from(self.ppu_read(addr));
 
         let bg_select: u16 = self.control.contains(PPUControl::PATTERN_BACKGROUND) as u16 * 0x1000;
-        let fine_y = self.vram_addr.register >> 12;
 
-        self.tile_addr = bg_select | tile_index << 4 | fine_y;
+        self.tile_addr = bg_select | (tile_index << 4) | self.scroll.fine_y;
     }
 
     pub fn fetch_bg_attr_byte(&mut self) {
-        let nametable_select = self.vram_addr.register & (0x0400 | 0x0800);
-        let y_bits = (self.vram_addr.register >> 4) & 0x38;
-        let x_bits = (self.vram_addr.register >> 2) & 0x07;
-        let addr = 0x23C0 | nametable_select | y_bits | x_bits;
-
-        let shift = (self.vram_addr.register & 0x02) | ((self.vram_addr.register >> 4) & 0x04);
-
-        self.next_palette = (self.ppu_read(addr) >> shift) & 0x03;
+        let addr = self.scroll.attr_addr();
+        let shift = self.scroll.attr_shift();
+        self.next_palette = ((self.ppu_read(addr) >> shift) & 0x03) << 2;
     }
 
     pub fn fetch_background(&mut self) {
@@ -545,7 +582,7 @@ impl PPU {
                     self.fetch_background();
 
                     if cycle & 0x07 == 0x00 {
-                        self.increment_x();
+                        self.scroll.increment_x();
                     }
                 } else if bg_dummy_cycle {
                     self.fetch_bg_nt_byte();
@@ -554,15 +591,15 @@ impl PPU {
                 if prerender_scanline {
                     match cycle {
                         280..=304 => {
-                            self.copy_y();
+                            self.scroll.copy_y();
                         },
                         _ => (),
                     }
                 }
 
                 match cycle {
-                    256 => self.increment_y(),
-                    257 => self.copy_x(),
+                    256 => self.scroll.increment_y(),
+                    257 => self.scroll.copy_x(),
                     _ => (),
                 }
             }
@@ -623,7 +660,7 @@ impl PPU {
     fn render_pixel(&mut self) {
         let x = self.cycle - 1;
         let y = self.scanline;
-        let addr = self.vram_addr.register & 0x3FFF;
+        let addr = self.scroll.addr();
 
         let color = if self.mask.rendering_enabled || (addr & 0x3F00) != 0x3F00 {
             let color = u16::from(self.pixel_color());
