@@ -201,6 +201,8 @@ pub struct Scroll {
     pub v: u16,
     pub t: u16,
     pub write_latch: bool,
+    pub delay_v_cycles: u32,
+    delay_v: u16,
 }
 
 impl Scroll {
@@ -213,6 +215,8 @@ impl Scroll {
             fine_y: 0,
             coarse_y: 0,
             write_latch: false,
+            delay_v_cycles: 0,
+            delay_v: 0,
         }
     }
 
@@ -279,6 +283,18 @@ impl Scroll {
         let nt_mask = 0x0800 | 0x0400;
         self.t = (self.t & !nt_mask) | (u16::from(val) & 0x03) << 10;
     }
+
+    pub fn delayed_update(&mut self) -> bool {
+        if self.delay_v_cycles > 0 {
+            self.delay_v_cycles -= 1;
+            if self.delay_v_cycles == 0 {
+                self.set_v(self.delay_v);
+                return true;
+            }
+        }
+        false
+    }
+
 }
 
 impl PPU {
@@ -463,12 +479,12 @@ impl PPU {
             0x0003 => (),
             0x0004 => (),
             0x0005 => {
+                self.open_bus = data;
+
                 let val = u16::from(data);
                 let lo_5_bit_mask: u16 = 0x1F;
                 let fine_mask: u16 = 0x07;
                 let fine_rshift = 3;
-
-                self.open_bus = data;
 
                 if self.scroll.write_latch {
                     let coarse_y_lshift = 5;
@@ -489,7 +505,8 @@ impl PPU {
                 if self.scroll.write_latch {
                     let lo_bits_mask = 0x7F00;
                     self.scroll.t = (self.scroll.t & lo_bits_mask) | u16::from(data);
-                    self.scroll.v = self.scroll.t;
+                    self.scroll.delay_v_cycles = 2;
+                    self.scroll.delay_v = self.scroll.t;
                 } else {
                     let hi_bits_mask = 0x00FF;
                     let six_bits_mask = 0x003F;
@@ -689,6 +706,11 @@ impl PPU {
                     _ => (),
                 }
             }
+        }
+
+        if self.scroll.delayed_update() {
+            let addr = self.scroll.addr();
+            self.ppu_read(addr);
         }
 
         if visible_cycle && visible_cycle { // && !skip_rendering
