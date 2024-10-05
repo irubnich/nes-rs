@@ -118,19 +118,6 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct LoopyRegister {
-    pub register: u16,
-}
-
-impl LoopyRegister {
-    pub fn new() -> LoopyRegister {
-        LoopyRegister {
-            register: 0x0000,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Scroll {
     pub fine_x: u16,
@@ -389,21 +376,24 @@ impl PPU {
             0x0003 => (),
             0x0004 => (),
             0x0005 => {
-                if self.address_latch == 0 {
-                    self.fine_x = data & 0x07;
+                let val = u16::from(data);
+                let lo_5_bit_mask: u16 = 0x1F;
+                let fine_mask: u16 = 0x07;
+                let fine_rshift = 3;
 
-                    let coarse_x_val = u16::from(data) >> 3;
-                    self.scroll.t |= coarse_x_val;
-
-                    self.address_latch = 1;
+                if self.scroll.write_latch {
+                    let coarse_y_lshift = 5;
+                    let fine_y_lshift = 12;
+                    self.scroll.t = self.scroll.t & !(0x7000 | 0x03E0)
+                        | (((val >> fine_rshift) & lo_5_bit_mask) << coarse_y_lshift)
+                        | ((val & fine_mask) << fine_y_lshift);
                 } else {
-                    self.scroll.t |= (u16::from(data) & 0x07) << 12;
-
-                    let coarse_y_val = u16::from(data) >> 3;
-                    self.scroll.t |= coarse_y_val << 5;
-
-                    self.address_latch = 0;
+                    self.scroll.t = self.scroll.t & !0x001F
+                        | ((val >> fine_rshift) & lo_5_bit_mask);
+                    self.scroll.fine_x = val & fine_mask;
                 }
+
+                self.scroll.write_latch = !self.scroll.write_latch;
             },
             0x0006 => {
                 if self.address_latch == 0 {
