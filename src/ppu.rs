@@ -29,9 +29,9 @@ pub struct PPU {
     scroll: Scroll,
     pub nmi: bool,
 
-    ppu_data_buffer: u8,
     fine_x: u8,
     vram_buffer: u8,
+    open_bus: u8,
 
     prev_palette: u8,
     curr_palette: u8,
@@ -380,8 +380,8 @@ impl PPU {
             mask: Mask::new(),
             control: Control::new(),
             scroll: Scroll::new(),
-            ppu_data_buffer: 0,
             vram_buffer: 0,
+            open_bus: 0,
             nmi: false,
             fine_x: 0,
             prev_palette: 0,
@@ -414,6 +414,8 @@ impl PPU {
                 self.stop_vblank();
                 self.scroll.write_latch = false;
 
+                self.open_bus |= data & 0xE0;
+
                 data
             },
             0x0003 => 0x00,
@@ -435,8 +437,10 @@ impl PPU {
                     buffer
                 } else {
                     self.vram_buffer = self.ppu_read(addr - 0x1000);
-                    val | (self.ppu_data_buffer & 0xC0)
+                    val | (self.open_bus & 0xC0)
                 };
+
+                self.open_bus = val;
 
                 val
             },
@@ -447,10 +451,12 @@ impl PPU {
     pub fn cpu_write(&mut self, addr: u16, data: u8) {
         match addr {
             0x0000 => {
+                self.open_bus = data;
                 self.control.write(data);
                 self.scroll.write_nametable_select(data);
             },
             0x0001 => {
+                self.open_bus = data;
                 self.mask.write(data);
             },
             0x0002 => (),
@@ -461,6 +467,8 @@ impl PPU {
                 let lo_5_bit_mask: u16 = 0x1F;
                 let fine_mask: u16 = 0x07;
                 let fine_rshift = 3;
+
+                self.open_bus = data;
 
                 if self.scroll.write_latch {
                     let coarse_y_lshift = 5;
@@ -477,6 +485,7 @@ impl PPU {
                 self.scroll.write_latch = !self.scroll.write_latch;
             },
             0x0006 => {
+                self.open_bus = data;
                 if self.scroll.write_latch {
                     let lo_bits_mask = 0x7F00;
                     self.scroll.t = (self.scroll.t & lo_bits_mask) | u16::from(data);
@@ -490,6 +499,7 @@ impl PPU {
                 self.scroll.write_latch = !self.scroll.write_latch;
             },
             0x0007 => {
+                self.open_bus = data;
                 let addr = self.scroll.addr();
                 self.increment_vram_addr();
                 self.ppu_write(addr, data);
@@ -594,7 +604,6 @@ impl PPU {
 
     pub fn reset(&mut self) {
         self.scroll.write_latch = false;
-        self.ppu_data_buffer = 0;
         self.scanline = 0;
         self.cycle = 0;
         self.status = Status::new();
@@ -702,6 +711,7 @@ impl PPU {
     fn stop_vblank(&mut self) {
         self.status.set_in_vblank(false);
         self.nmi = false;
+        self.open_bus = 0;
     }
 
     pub fn clock(&mut self) -> usize {
@@ -770,7 +780,7 @@ impl PPU {
     }
 
     fn peek_status(&self) -> u8 {
-        (self.status.read() & 0xE0) | (self.ppu_data_buffer & 0x1F)
+        (self.status.read() & 0xE0) | (self.open_bus & 0x1F)
     }
 
     pub fn get_pattern_table(&self, i: u8) -> &olc::Sprite {
