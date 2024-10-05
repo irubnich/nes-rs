@@ -629,7 +629,7 @@ impl PPU {
     }
 
     pub fn increment_vram_addr(&mut self) {
-        if self.mask.rendering_enabled && (self.scanline == 261 || self.scanline <= 239) {
+        if self.mask.rendering_enabled && (self.scanline == 311 || self.scanline <= 239) {
             self.scroll.increment_x();
             self.scroll.increment_y();
         } else {
@@ -673,7 +673,7 @@ impl PPU {
         let bg_prefetch_cycle = matches!(cycle, 321..=336);
         let bg_fetch_cycle = bg_prefetch_cycle || visible_cycle;
         let visible_scanline = scanline <= 239;
-        let prerender_scanline = self.scanline == 261;
+        let prerender_scanline = self.scanline == 311;
 
         if self.mask.rendering_enabled {
             let render_scanline = visible_scanline || prerender_scanline;
@@ -737,8 +737,8 @@ impl PPU {
     }
 
     pub fn clock(&mut self) -> usize {
-        let prerender_scanline = 261; // 331 alternative
-        let vblank_scanline = 241; // 291 alternative
+        let prerender_scanline = 331;
+        let vblank_scanline = 291;
 
         if self.cycle >= 340 {
             self.cycle = 0;

@@ -222,7 +222,7 @@ impl olc::Application for Emulator {
 }
 
 fn main() {
-    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("dk.nes"))));
+    let cartridge = Rc::new(RefCell::new(Cartridge::new(String::from("smb.nes"))));
 
     let ppu = Rc::new(RefCell::new(PPU::new(cartridge.clone())));
 
